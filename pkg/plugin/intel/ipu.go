@@ -24,7 +24,9 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/openshift/dpu-operator/pkg/opi"
 	"github.com/openshift/dpu-operator/pkg/plugin"
+	"github.com/openshift/dpu-operator/pkg/plugin/pci"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -61,6 +63,9 @@ type IPUPlugin struct {
 
 	// Cache of discovered devices
 	devices []plugin.Device
+
+	// gRPC client for OPI bridge
+	opiClient *opi.Client
 }
 
 // New creates a new Intel IPU plugin instance.
@@ -103,7 +108,13 @@ func (p *IPUPlugin) Initialize(ctx context.Context, config plugin.PluginConfig) 
 		"opiEndpoint", p.opiEndpoint,
 		"logLevel", config.LogLevel)
 
-	// TODO: Initialize gRPC connection to opi-intel-bridge
+	// Initialize gRPC connection to opi-intel-bridge
+	var err error
+	p.opiClient, err = opi.NewClient(p.opiEndpoint)
+	if err != nil {
+		p.log.Error(err, "Failed to create OPI client")
+		return fmt.Errorf("failed to create OPI client: %w", err)
+	}
 
 	p.initialized = true
 	p.log.Info("Intel IPU plugin initialized successfully")
@@ -121,6 +132,12 @@ func (p *IPUPlugin) Shutdown(ctx context.Context) error {
 
 	p.log.Info("Shutting down Intel IPU plugin")
 
+	if p.opiClient != nil {
+		if err := p.opiClient.Close(); err != nil {
+			p.log.Error(err, "Error closing OPI client")
+		}
+	}
+
 	p.initialized = false
 	p.devices = nil
 	p.log.Info("Intel IPU plugin shutdown complete")
@@ -134,6 +151,14 @@ func (p *IPUPlugin) HealthCheck(ctx context.Context) error {
 
 	if !p.initialized {
 		return plugin.ErrNotInitialized
+	}
+
+	// Check gRPC connection health via Ping
+	if p.opiClient != nil {
+		_, err := p.opiClient.Lifecycle().Ping(ctx)
+		if err != nil {
+			return fmt.Errorf("OPI bridge health check failed: %w", err)
+		}
 	}
 
 	return nil
@@ -168,8 +193,54 @@ func (p *IPUPlugin) DiscoverDevices(ctx context.Context) ([]plugin.Device, error
 
 // scanPCIBus scans the PCI bus for supported Intel devices.
 func (p *IPUPlugin) scanPCIBus(ctx context.Context) ([]plugin.Device, error) {
+	scanner := pci.NewScanner()
 	var devices []plugin.Device
-	// TODO: Implement actual PCI bus scanning
+
+	// Scan for each supported device ID
+	for _, supportedDevice := range supportedDevices {
+		pciDevices, err := scanner.ScanByVendorDevice(supportedDevice.VendorID, supportedDevice.DeviceID)
+		if err != nil {
+			p.log.V(1).Info("Failed to scan for PCI device",
+				"vendorID", supportedDevice.VendorID,
+				"deviceID", supportedDevice.DeviceID,
+				"error", err)
+			continue
+		}
+
+		for _, pciDev := range pciDevices {
+			// Create plugin device from PCI device
+			device := plugin.Device{
+				ID:          fmt.Sprintf("intel-%s", pciDev.Address),
+				PCIAddress:  pciDev.Address,
+				Vendor:      "Intel",
+				Model:       supportedDevice.Description,
+				Healthy:     true,
+				Metadata: map[string]string{
+					"pci_vendor_id":   pciDev.VendorID,
+					"pci_device_id":   pciDev.DeviceID,
+					"pci_class":       pciDev.Class,
+					"device_type":     supportedDevice.Description,
+					"driver":          pciDev.Driver,
+					"numa_node":       pciDev.NumaNode,
+				},
+			}
+
+			// Try to get serial number from VPD
+			if serialNum, err := scanner.GetSerialNumber(pciDev.Address); err == nil {
+				device.SerialNumber = serialNum
+			} else {
+				// Generate a stable ID based on PCI address
+				device.SerialNumber = fmt.Sprintf("INTEL-%s", pciDev.Address)
+			}
+
+			devices = append(devices, device)
+			p.log.Info("Discovered Intel IPU device",
+				"pciAddress", pciDev.Address,
+				"model", device.Model,
+				"driver", pciDev.Driver)
+		}
+	}
+
 	return devices, nil
 }
 

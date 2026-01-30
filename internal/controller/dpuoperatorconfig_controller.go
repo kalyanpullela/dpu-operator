@@ -25,6 +25,7 @@ import (
 	configv1 "github.com/openshift/dpu-operator/api/v1"
 	"github.com/openshift/dpu-operator/internal/images"
 	"github.com/openshift/dpu-operator/internal/utils"
+	"github.com/openshift/dpu-operator/pkg/plugin"
 	"github.com/openshift/dpu-operator/pkgs/render"
 	"github.com/openshift/dpu-operator/pkgs/vars"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -52,6 +53,7 @@ type DpuOperatorConfigReconciler struct {
 	imageManager    images.ImageManager
 	imagePullPolicy string
 	pathManager     utils.PathManager
+	pluginRegistry  *plugin.Registry
 
 	// Track created resources per DpuOperatorConfig for cleanup
 	resourceRenderer *render.ResourceRenderer
@@ -63,6 +65,7 @@ func NewDpuOperatorConfigReconciler(client client.Client, imageManager images.Im
 		Client:           client,
 		imageManager:     imageManager,
 		imagePullPolicy:  "IfNotPresent",
+		pluginRegistry:   plugin.DefaultRegistry(),
 		resourceRenderer: render.NewResourceRenderer(configKey),
 	}
 }
@@ -70,6 +73,20 @@ func NewDpuOperatorConfigReconciler(client client.Client, imageManager images.Im
 func (r *DpuOperatorConfigReconciler) WithImagePullPolicy(policy string) *DpuOperatorConfigReconciler {
 	r.imagePullPolicy = policy
 	return r
+}
+
+// logDiscoveredPlugins logs all plugins discovered in the registry
+func (r *DpuOperatorConfigReconciler) logDiscoveredPlugins(logger logr.Logger) {
+	plugins := r.pluginRegistry.List()
+	logger.Info("Plugin registry initialized", "pluginCount", len(plugins))
+	for _, p := range plugins {
+		info := p.Info()
+		logger.Info("Registered plugin",
+			"name", info.Name,
+			"vendor", info.Vendor,
+			"version", info.Version,
+			"capabilities", info.Capabilities)
+	}
 }
 
 //+kubebuilder:rbac:groups=config.openshift.io,resources=dataprocessingunits,verbs=get;list;watch;create;update;patch;delete
@@ -125,6 +142,9 @@ func (r *DpuOperatorConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	logger.Info("Reconciling DpuOperatorConfig", "name", dpuOperatorConfig.Name, "namespace", dpuOperatorConfig.Namespace)
+
+	// Log discovered plugins
+	r.logDiscoveredPlugins(logger)
 
 	if !dpuOperatorConfig.DeletionTimestamp.IsZero() {
 		return r.handleDeletion(ctx, dpuOperatorConfig)

@@ -27,6 +27,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/openshift/dpu-operator/pkg/plugin"
+	"github.com/openshift/dpu-operator/pkg/plugin/pci"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/openshift/dpu-operator/pkg/opi"
@@ -235,9 +236,54 @@ func (p *BlueFieldPlugin) DiscoverDevices(ctx context.Context) ([]plugin.Device,
 
 // scanPCIBus scans the PCI bus for supported NVIDIA devices.
 func (p *BlueFieldPlugin) scanPCIBus(ctx context.Context) ([]plugin.Device, error) {
+	scanner := pci.NewScanner()
 	var devices []plugin.Device
-	// Placeholder for PCI scanning logic
-	// In mock environment, this returns empty
+
+	// Scan for each supported device ID
+	for _, supportedDevice := range supportedDevices {
+		pciDevices, err := scanner.ScanByVendorDevice(supportedDevice.VendorID, supportedDevice.DeviceID)
+		if err != nil {
+			p.log.V(1).Info("Failed to scan for PCI device",
+				"vendorID", supportedDevice.VendorID,
+				"deviceID", supportedDevice.DeviceID,
+				"error", err)
+			continue
+		}
+
+		for _, pciDev := range pciDevices {
+			// Create plugin device from PCI device
+			device := plugin.Device{
+				ID:          fmt.Sprintf("nvidia-%s", pciDev.Address),
+				PCIAddress:  pciDev.Address,
+				Vendor:      "NVIDIA",
+				Model:       supportedDevice.Description,
+				Healthy:     true,
+				Metadata: map[string]string{
+					"pci_vendor_id":   pciDev.VendorID,
+					"pci_device_id":   pciDev.DeviceID,
+					"pci_class":       pciDev.Class,
+					"device_type":     supportedDevice.Description,
+					"driver":          pciDev.Driver,
+					"numa_node":       pciDev.NumaNode,
+				},
+			}
+
+			// Try to get serial number from VPD
+			if serialNum, err := scanner.GetSerialNumber(pciDev.Address); err == nil {
+				device.SerialNumber = serialNum
+			} else {
+				// Generate a stable ID based on PCI address
+				device.SerialNumber = fmt.Sprintf("NV-%s", pciDev.Address)
+			}
+
+			devices = append(devices, device)
+			p.log.Info("Discovered NVIDIA BlueField device",
+				"pciAddress", pciDev.Address,
+				"model", device.Model,
+				"driver", pciDev.Driver)
+		}
+	}
+
 	return devices, nil
 }
 

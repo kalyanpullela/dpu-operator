@@ -20,12 +20,14 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/dpu-operator/api/v1"
 	"github.com/openshift/dpu-operator/internal/images"
 	"github.com/openshift/dpu-operator/internal/platform"
+	"github.com/openshift/dpu-operator/pkg/plugin"
 	"github.com/openshift/dpu-operator/pkgs/render"
 	"github.com/openshift/dpu-operator/pkgs/vars"
 	corev1 "k8s.io/api/core/v1"
@@ -46,6 +48,7 @@ type DataProcessingUnitReconciler struct {
 	Scheme          *runtime.Scheme
 	imageManager    images.ImageManager
 	imagePullPolicy string
+	pluginRegistry  *plugin.Registry
 
 	// Track created VSP resources per DataProcessingUnit for cleanup
 	vspResourceRenderers map[string]*render.ResourceRenderer
@@ -57,6 +60,7 @@ func NewDataProcessingUnitReconciler(client client.Client, scheme *runtime.Schem
 		Scheme:               scheme,
 		imageManager:         imageManager,
 		imagePullPolicy:      "Always",
+		pluginRegistry:       plugin.DefaultRegistry(),
 		vspResourceRenderers: make(map[string]*render.ResourceRenderer),
 	}
 }
@@ -64,6 +68,41 @@ func NewDataProcessingUnitReconciler(client client.Client, scheme *runtime.Schem
 func (r *DataProcessingUnitReconciler) WithImagePullPolicy(policy string) *DataProcessingUnitReconciler {
 	r.imagePullPolicy = policy
 	return r
+}
+
+// getPluginForDPU finds the appropriate plugin for a given DPU based on its product name
+func (r *DataProcessingUnitReconciler) getPluginForDPU(logger logr.Logger, dpu *configv1.DataProcessingUnit) plugin.Plugin {
+	plugins := r.pluginRegistry.List()
+
+	// Try to match by product name (simple heuristic)
+	productName := dpu.Spec.DpuProductName
+	for _, p := range plugins {
+		info := p.Info()
+		// Simple match - could be improved with better logic
+		if contains(productName, info.Vendor) {
+			logger.Info("Matched plugin for DPU", "plugin", info.Name, "vendor", info.Vendor, "productName", productName)
+			return p
+		}
+	}
+
+	logger.V(1).Info("No plugin matched for DPU", "productName", productName, "availablePlugins", len(plugins))
+	return nil
+}
+
+// contains is a helper to check if a string contains a substring (case-insensitive)
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) &&
+		(s == substr ||
+		 findSubstring(strings.ToLower(s), strings.ToLower(substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=*
@@ -96,6 +135,12 @@ func (r *DataProcessingUnitReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	logger.Info("Reconciling DataProcessingUnit", "name", dpu.Name, "nodeName", dpu.Spec.NodeName, "dpuProductName", dpu.Spec.DpuProductName)
+
+	// Check if we have a plugin for this DPU
+	matchedPlugin := r.getPluginForDPU(logger, dpu)
+	if matchedPlugin != nil {
+		logger.Info("Found plugin for DPU", "plugin", matchedPlugin.Info().Name)
+	}
 
 	// Handle deletion
 	if dpu.GetDeletionTimestamp() != nil {
