@@ -86,10 +86,11 @@ func TestNVIDIAPlugin_WithOPIBridge(t *testing.T) {
 
 	// Test network operations
 	t.Log("Testing network operations...")
+	vlanID := 100
 	portReq := &plugin.BridgePortRequest{
 		Name:       "test-port-nvidia",
 		MACAddress: "02:00:00:00:00:01",
-		VLANID:     100,
+		VLANID:     &vlanID,
 	}
 
 	port, err := nvPlugin.CreateBridgePort(ctx, portReq)
@@ -163,10 +164,11 @@ func TestIntelPlugin_WithOPIBridge(t *testing.T) {
 
 	// Test network operations
 	t.Log("Testing network operations...")
+	vlanID2 := 200
 	portReq := &plugin.BridgePortRequest{
 		Name:       "test-port-intel",
 		MACAddress: "02:00:00:00:00:02",
-		VLANID:     200,
+		VLANID:     &vlanID2,
 	}
 
 	port, err := intelPlugin.CreateBridgePort(ctx, portReq)
