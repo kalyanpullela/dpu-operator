@@ -3,8 +3,18 @@
 This operator will manage and configure data processing unit (DPUs) to be used in accelerating/offloading k8s networking functions.
 
 ## Description
+ 
+ The DPU Operator adds support for DPUs to OpenShift in a vendor-agnostic way, using (soon to be) standard APIs. The main goal is for users to be able to run their workloads leveraging DPU resources without requiring an expert understanding of vendor-specific details.
 
-The DPU operator adds support for DPUs to OpenShift in a vendor-agnostic way, using (soon to be) standard APIs. The main goal is for users to be able to run their workloads leveraging DPU resources without requiring an expert understanding of vendor-specific details.
+### Plugin Architecture
+The operator uses a unified plugin architecture (`pkg/plugin`) to support multiple hardware vendors through a common interface. This architecture abstracts vendor-specific details and leverages OPI (Open Programmable Infrastructure) APIs where possible.
+
+**Supported Vendors:**
+*   **NVIDIA**: BlueField-2/3 support via OPI Bridge (fully integrated)
+*   **Intel**: IPU support (structure available)
+*   **Marvell**: Octeon support (structure available)
+*   **MangoBoost**: Support structure available
+*   **xSight**: Support structure available
 
 ## Getting Started
 
