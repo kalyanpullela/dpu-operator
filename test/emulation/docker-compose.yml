@@ -1,0 +1,138 @@
+version: '3.8'
+
+services:
+  # NVIDIA Bridge - Port 50051
+  opi-nvidia:
+    image: ghcr.io/opiproject/opi-nvidia-bridge:main
+    container_name: opi-nvidia-emulator
+    ports:
+      - "50051:50051"  # gRPC
+      - "8082:8082"    # HTTP Gateway
+    environment:
+      - REDIS_ADDR=redis-nvidia:6379
+    depends_on:
+      - redis-nvidia
+    networks:
+      - opi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/v1/inventory/1/inventory/2"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis-nvidia:
+    image: redis:7.2-alpine
+    container_name: redis-nvidia
+    networks:
+      - opi-network
+
+  # Intel Bridge - Port 50052
+  opi-intel:
+    image: ghcr.io/opiproject/opi-intel-bridge:main
+    container_name: opi-intel-emulator
+    ports:
+      - "50052:50051"  # gRPC (mapped to avoid conflict)
+      - "8083:8082"    # HTTP Gateway
+    environment:
+      - REDIS_ADDR=redis-intel:6379
+    depends_on:
+      - redis-intel
+    networks:
+      - opi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/v1/inventory/1/inventory/2"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis-intel:
+    image: redis:7.2-alpine
+    container_name: redis-intel
+    networks:
+      - opi-network
+
+  # SPDK Bridge (Storage Reference) - Port 50053
+  opi-spdk:
+    image: ghcr.io/opiproject/opi-spdk-bridge:main
+    container_name: opi-spdk-emulator
+    ports:
+      - "50053:50051"  # gRPC
+      - "8084:8082"    # HTTP Gateway
+    environment:
+      - REDIS_ADDR=redis-spdk:6379
+    depends_on:
+      - redis-spdk
+    networks:
+      - opi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/v1/inventory/1/inventory/2"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis-spdk:
+    image: redis:7.2-alpine
+    container_name: redis-spdk
+    networks:
+      - opi-network
+
+  # Marvell Bridge - Port 50054
+  opi-marvell:
+    image: ghcr.io/opiproject/opi-marvell-bridge:main
+    container_name: opi-marvell-emulator
+    ports:
+      - "50054:50051"  # gRPC
+      - "8085:8082"    # HTTP Gateway
+    environment:
+      - REDIS_ADDR=redis-marvell:6379
+    depends_on:
+      - redis-marvell
+    networks:
+      - opi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/v1/inventory/1/inventory/2"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis-marvell:
+    image: redis:7.2-alpine
+    container_name: redis-marvell
+    networks:
+      - opi-network
+
+  # StrongSwan Bridge (Security/IPsec) - Port 50055
+  opi-strongswan:
+    image: ghcr.io/opiproject/opi-strongswan-bridge:main
+    container_name: opi-strongswan-emulator
+    ports:
+      - "50055:50051"  # gRPC
+      - "8086:8082"    # HTTP Gateway
+    environment:
+      - REDIS_ADDR=redis-strongswan:6379
+    depends_on:
+      - redis-strongswan
+    networks:
+      - opi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/v1/inventory/1/inventory/2"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis-strongswan:
+    image: redis:7.2-alpine
+    container_name: redis-strongswan
+    networks:
+      - opi-network
+
+networks:
+  opi-network:
+    driver: bridge
+
+# Note: If images are not available on ghcr.io, you can build them locally:
+# cd ~/unified-k8s/opi-nvidia-bridge && docker build -t ghcr.io/opiproject/opi-nvidia-bridge:main .
+# cd ~/unified-k8s/opi-intel-bridge && docker build -t ghcr.io/opiproject/opi-intel-bridge:main .
+# cd ~/unified-k8s/opi-spdk-bridge && docker build -t ghcr.io/opiproject/opi-spdk-bridge:main .
+# cd ~/unified-k8s/opi-marvell-bridge && docker build -t ghcr.io/opiproject/opi-marvell-bridge:main .
+# cd ~/unified-k8s/opi-strongswan-bridge && docker build -t ghcr.io/opiproject/opi-strongswan-bridge:main .
