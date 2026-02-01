@@ -1,0 +1,21 @@
+dependencies:
+  # Optional dependency on Multus CNI for network attachment definitions
+  - type: olm.package
+    value:
+      packageName: multus-cni
+      version: ">=4.0.0"
+    optional: true
+
+  # Optional dependency on SR-IOV Network Operator for SR-IOV device management
+  - type: olm.package
+    value:
+      packageName: sriov-network-operator
+      version: ">=4.11.0"
+    optional: true
+
+  # Minimum Kubernetes version requirement
+  - type: olm.gvk.required
+    value:
+      group: ""
+      kind: Node
+      version: v1

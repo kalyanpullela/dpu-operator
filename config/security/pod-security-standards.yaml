@@ -1,0 +1,203 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dpu-operator-system
+  labels:
+    # Pod Security Standards enforcement
+    # https://kubernetes.io/docs/concepts/security/pod-security-standards/
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    # OpenShift Security Context Constraints
+    security.openshift.io/scc.podSecurityLabelSync: "false"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dpu-operator-controller-manager
+  namespace: dpu-operator-system
+automountServiceAccountToken: true
+---
+# SecurityContext defaults for restricted Pod Security Standard
+# Apply these to all workloads
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-context-defaults
+  namespace: dpu-operator-system
+data:
+  pod-security-context.yaml: |
+    runAsNonRoot: true
+    runAsUser: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+    supplementalGroups: []
+
+  container-security-context.yaml: |
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: 65532
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+    seccompProfile:
+      type: RuntimeDefault
+---
+# Network Policy: Deny all by default
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-default
+  namespace: dpu-operator-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Network Policy: Allow operator egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: operator-egress
+  namespace: dpu-operator-system
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: controller-manager
+  policyTypes:
+    - Egress
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow Kubernetes API access
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              component: kube-apiserver
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+    # Allow access to kubelet for node management
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 10250
+    # Allow OPI bridge connections (on DPU nodes)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 50051  # NVIDIA
+        - protocol: TCP
+          port: 50052  # Intel
+        - protocol: TCP
+          port: 50053  # SPDK
+        - protocol: TCP
+          port: 50054  # Marvell
+        - protocol: TCP
+          port: 50055  # StrongSwan
+---
+# Network Policy: Allow metrics scraping
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metrics-scraping
+  namespace: dpu-operator-system
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: controller-manager
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow Prometheus to scrape metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: openshift-monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: openshift-user-workload-monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Network Policy: Allow webhook traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-webhook-traffic
+  namespace: dpu-operator-system
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: controller-manager
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow API server to reach webhooks
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9443
+---
+# Resource Quota to prevent resource exhaustion
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dpu-operator-quota
+  namespace: dpu-operator-system
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: "8Gi"
+    limits.cpu: "8"
+    limits.memory: "16Gi"
+    persistentvolumeclaims: "0"  # Operator shouldn't need PVCs
+    services.loadbalancers: "0"  # No external load balancers needed
+---
+# Limit Range to enforce resource limits
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: dpu-operator-limits
+  namespace: dpu-operator-system
+spec:
+  limits:
+    - max:
+        cpu: "2"
+        memory: "4Gi"
+      min:
+        cpu: "10m"
+        memory: "32Mi"
+      default:
+        cpu: "100m"
+        memory: "128Mi"
+      defaultRequest:
+        cpu: "50m"
+        memory: "64Mi"
+      type: Container
+    - max:
+        cpu: "4"
+        memory: "8Gi"
+      type: Pod
