@@ -1,0 +1,183 @@
+{{- if .Values.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "dpu-operator.fullname" . }}
+  labels:
+    {{- include "dpu-operator.labels" . | nindent 4 }}
+rules:
+  # DPU CRD permissions
+  - apiGroups:
+      - dpu.openshift.io
+    resources:
+      - dpus
+      - dpuservices
+      - dpudeployments
+      - dpuconfigs
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - dpu.openshift.io
+    resources:
+      - dpus/status
+      - dpuservices/status
+      - dpudeployments/status
+      - dpuconfigs/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - dpu.openshift.io
+    resources:
+      - dpus/finalizers
+      - dpuservices/finalizers
+      - dpudeployments/finalizers
+      - dpuconfigs/finalizers
+    verbs:
+      - update
+
+  # Core resources - read access
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+      - pods
+      - services
+      - endpoints
+      - configmaps
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+
+  # Core resources - write access
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - services
+      - configmaps
+      - secrets
+      - events
+    verbs:
+      - create
+      - update
+      - patch
+      - delete
+
+  # Apps resources
+  - apiGroups:
+      - apps
+    resources:
+      - daemonsets
+      - deployments
+      - replicasets
+      - statefulsets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Batch resources
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+      - cronjobs
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Networking resources
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - networkpolicies
+      - ingresses
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # RBAC resources (for plugin management)
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Coordination for leader election
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Admission webhooks
+  - apiGroups:
+      - admissionregistration.k8s.io
+    resources:
+      - mutatingwebhookconfigurations
+      - validatingwebhookconfigurations
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "dpu-operator.fullname" . }}
+  labels:
+    {{- include "dpu-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "dpu-operator.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "dpu-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

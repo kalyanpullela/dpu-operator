@@ -1,0 +1,74 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "dpu-operator.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dpu-operator.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "dpu-operator.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    {{- toYaml .Values.networkPolicy.policyTypes | nindent 4 }}
+
+  ingress:
+    # Allow metrics scraping
+    {{- if .Values.metrics.enabled }}
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.metrics.port }}
+      from: []  # Allow from any source
+    {{- end }}
+
+    # Allow webhook traffic
+    {{- if .Values.webhook.enabled }}
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.webhook.port }}
+      from:
+        - namespaceSelector: {}
+    {{- end }}
+
+    # Custom ingress rules from values
+    {{- with .Values.networkPolicy.ingress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+
+  egress:
+    # Allow DNS resolution
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+
+    # Allow access to Kubernetes API server
+    - ports:
+        - protocol: TCP
+          port: 6443
+        - protocol: TCP
+          port: 443
+      to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              component: apiserver
+
+    # Allow access to kubelet (for DPU node management)
+    - ports:
+        - protocol: TCP
+          port: 10250
+      to:
+        - podSelector: {}
+
+    # Custom egress rules from values
+    {{- with .Values.networkPolicy.egress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

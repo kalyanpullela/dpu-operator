@@ -1,0 +1,141 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - 'release-*'
+  push:
+    branches:
+      - main
+
+env:
+  GO_VERSION: '1.21'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          args: --timeout=10m
+
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run unit tests
+        run: |
+          make test
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run integration tests
+        run: |
+          go test -tags=integration ./pkg/plugin/... -v
+
+  test-emulation:
+    name: Emulation Tests
+    runs-on: ubuntu-latest
+    services:
+      opi-nvidia:
+        image: ghcr.io/opiproject/opi-nvidia-bridge:main
+        ports:
+          - 50051:50051
+      opi-intel:
+        image: ghcr.io/opiproject/opi-intel-bridge:main
+        ports:
+          - 50052:50051
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Wait for OPI bridges
+        run: |
+          timeout 30 sh -c 'until nc -z localhost 50051; do sleep 1; done'
+          timeout 30 sh -c 'until nc -z localhost 50052; do sleep 1; done'
+
+      - name: Run emulation tests
+        run: |
+          go test -tags=emulation ./test/emulation/... -v
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build operator binary
+        run: |
+          make build
+
+      - name: Build container image
+        run: |
+          make docker-build IMG=ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}
+
+  verify-manifests:
+    name: Verify Generated Manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Generate manifests
+        run: |
+          make manifests
+
+      - name: Verify no changes
+        run: |
+          git diff --exit-code || (echo "Generated files are out of sync. Run 'make manifests' and commit." && exit 1)

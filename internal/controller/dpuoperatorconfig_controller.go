@@ -20,11 +20,13 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/dpu-operator/api/v1"
 	"github.com/openshift/dpu-operator/internal/images"
 	"github.com/openshift/dpu-operator/internal/utils"
+	"github.com/openshift/dpu-operator/pkg/metrics"
 	"github.com/openshift/dpu-operator/pkg/plugin"
 	"github.com/openshift/dpu-operator/pkgs/render"
 	"github.com/openshift/dpu-operator/pkgs/vars"
@@ -86,6 +88,14 @@ func (r *DpuOperatorConfigReconciler) logDiscoveredPlugins(logger logr.Logger) {
 			"vendor", info.Vendor,
 			"version", info.Version,
 			"capabilities", info.Capabilities)
+
+		// Record plugin registration metrics
+		metrics.RecordPluginRegistration(info.Vendor, info.Name)
+
+		// Record plugin capabilities
+		for _, cap := range info.Capabilities {
+			metrics.RecordPluginCapability(info.Name, cap, true)
+		}
 	}
 }
 
@@ -127,7 +137,15 @@ func (r *DpuOperatorConfigReconciler) logDiscoveredPlugins(logger logr.Logger) {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.15.0/pkg/reconcile
 func (r *DpuOperatorConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	startTime := time.Now()
 	logger := log.FromContext(ctx)
+
+	// Track reconciliation duration and result
+	var reconcileErr error
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		metrics.RecordReconciliation("DpuOperatorConfig", duration, reconcileErr)
+	}()
 
 	// req.NamespacedName always points to the DpuOperatorConfig (owner)
 	// We reconcile the DpuOperatorConfig regardless of what triggered the reconcile
@@ -138,6 +156,7 @@ func (r *DpuOperatorConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, nil
 		}
 		logger.Error(err, "Failed to get DpuOperatorConfig resource")
+		reconcileErr = err
 		return ctrl.Result{}, err
 	}
 

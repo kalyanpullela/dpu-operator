@@ -1,0 +1,32 @@
+apiVersion: v2
+name: dpu-operator
+description: A vendor-agnostic Kubernetes operator for managing DPU/IPU devices
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+keywords:
+  - dpu
+  - ipu
+  - networking
+  - storage
+  - offload
+  - nvidia
+  - intel
+  - marvell
+  - xsight
+
+home: https://github.com/openshift/dpu-operator
+sources:
+  - https://github.com/openshift/dpu-operator
+  - https://github.com/opiproject/opi-api
+
+maintainers:
+  - name: DPU Operator Team
+    email: dpu-operator-maintainers@lists.openshift.io
+
+icon: https://raw.githubusercontent.com/openshift/dpu-operator/main/docs/logo.png
+
+annotations:
+  category: Infrastructure
+  licenses: Apache-2.0

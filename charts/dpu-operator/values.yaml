@@ -1,0 +1,193 @@
+# Default values for dpu-operator
+
+# Image configuration
+image:
+  repository: ghcr.io/openshift/dpu-operator
+  pullPolicy: IfNotPresent
+  tag: ""  # Overrides the image tag whose default is the chart appVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Operator configuration
+operator:
+  # Number of replicas for the operator
+  replicas: 1
+
+  # Log level (0=info, 1=debug, 2=trace)
+  logLevel: 0
+
+  # Leader election configuration
+  leaderElection:
+    enabled: true
+    leaseDuration: 15s
+    renewDeadline: 10s
+    retryPeriod: 2s
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# RBAC configuration
+rbac:
+  create: true
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity rules
+affinity: {}
+
+# Priority class name
+priorityClassName: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod labels
+podLabels: {}
+
+# Metrics configuration
+metrics:
+  enabled: true
+  port: 8080
+
+  # ServiceMonitor for Prometheus Operator
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    annotations: {}
+
+# Webhook configuration
+webhook:
+  enabled: true
+  port: 9443
+  certManager:
+    enabled: true
+  failurePolicy: Fail
+
+# Network policy
+networkPolicy:
+  enabled: false
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 6443  # Kubernetes API
+
+# Plugin configuration
+plugins:
+  # NVIDIA BlueField plugin
+  nvidia:
+    enabled: true
+    opiEndpoint: "localhost:50051"
+
+  # Intel IPU plugin
+  intel:
+    enabled: true
+    opiEndpoint: "localhost:50052"
+
+  # Marvell Octeon plugin
+  marvell:
+    enabled: true
+    opiEndpoint: "localhost:50053"
+
+  # xSight plugin
+  xsight:
+    enabled: true
+    opiEndpoint: "localhost:50054"
+
+  # MangoBoost plugin (optional)
+  mangoboost:
+    enabled: false
+    opiEndpoint: "localhost:50055"
+
+# DPU daemon configuration
+daemon:
+  enabled: true
+  image:
+    repository: ghcr.io/openshift/dpu-daemon
+    pullPolicy: IfNotPresent
+    tag: ""
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  # Node selector for DPU-enabled nodes
+  nodeSelector:
+    feature.node.kubernetes.io/dpu: "true"
+
+  tolerations:
+    - key: dpu
+      operator: Exists
+      effect: NoSchedule
+
+# CRD installation
+crds:
+  install: true
+  keep: true
+
+# Deployment strategy
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+# Health check configuration
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
