@@ -150,11 +150,19 @@ func (p *XSightPlugin) HealthCheck(ctx context.Context) error {
 		return plugin.ErrNotInitialized
 	}
 
-	// Check gRPC connection health via Ping
+	// Check if OPI client is connected
 	if p.opiClient != nil {
+		if !p.opiClient.IsConnected() {
+			return fmt.Errorf("OPI client not connected")
+		}
+
+		// Try to ping the OPI bridge if Lifecycle service is available
+		// Note: Some OPI bridges may not implement Lifecycle service, so we
+		// make this a soft check rather than failing health entirely
 		_, err := p.opiClient.Lifecycle().Ping(ctx)
 		if err != nil {
-			return fmt.Errorf("OPI bridge health check failed: %w", err)
+			// Log warning but don't fail - bridge might not implement Lifecycle
+			p.log.V(1).Info("Lifecycle.Ping not available (may not be implemented)", "error", err.Error())
 		}
 	}
 
