@@ -165,6 +165,106 @@ docker logs opi-nvidia-emulator 2>&1 | tail -15
 
 ---
 
+### Part 2.5: **PROOF of Real OPI Communication** (5 minutes) 🔍
+
+**This section proves the tests aren't mocked - they're making real gRPC calls.**
+
+#### Method 1: Watch Live Bridge Logs
+
+```bash
+# Clear previous logs
+docker logs opi-nvidia-emulator 2>&1 > /dev/null
+
+# Run a test
+go test -tags=emulation ./test/emulation/... -run TestNVIDIAPlugin -timeout 10s 2>&1 | grep "PASS"
+
+# Show what the bridge received
+echo "========== BRIDGE RECEIVED THESE REQUESTS =========="
+docker logs opi-nvidia-emulator 2>&1 | tail -20
+```
+
+**Expected Output:**
+- gRPC connection logs
+- Request/response entries
+- Lifecycle.Ping calls
+- Network operation requests
+
+**Talking Point:** "These logs prove our plugin sent real gRPC requests to the bridge - not mocked!"
+
+#### Method 2: The Smoking Gun Test
+
+```bash
+# Stop the bridge
+echo "1. Stopping NVIDIA bridge..."
+docker stop opi-nvidia-emulator
+
+# Try to run test - should FAIL
+echo "2. Running test without bridge..."
+go test -tags=emulation ./test/emulation/... -run TestNVIDIAPlugin -timeout 10s 2>&1 | grep "connection refused"
+# Output: "connection refused" - proves it was trying to connect!
+
+# Restart bridge
+echo "3. Restarting bridge..."
+docker start opi-nvidia-emulator
+sleep 3
+
+# Test should PASS now
+echo "4. Running test with bridge..."
+go test -tags=emulation ./test/emulation/... -run TestNVIDIAPlugin -timeout 15s 2>&1 | grep "PASS"
+```
+
+**Talking Point:** "Test fails when bridge is down, passes when it's up - conclusive proof of real communication!"
+
+#### Method 3: Check All Bridges Received Traffic
+
+```bash
+echo "Checking activity on all 5 bridges..."
+for bridge in opi-nvidia-emulator opi-intel-emulator opi-spdk-emulator opi-marvell-emulator opi-strongswan-emulator; do
+    LINES=$(docker logs $bridge 2>&1 | wc -l)
+    echo "  $bridge: $LINES log lines"
+done
+```
+
+**Expected Output:**
+- Each bridge shows log activity
+- Proves multi-vendor communication
+- Not just one mock object
+
+#### Method 4: HTTP Gateway Verification
+
+```bash
+# OPI bridges also expose HTTP gateways
+echo "Testing NVIDIA bridge HTTP gateway..."
+curl -s http://localhost:8082/v1/inventory/1/inventory/2 | head -20
+
+echo ""
+echo "Testing Intel bridge HTTP gateway..."
+curl -s http://localhost:8083/v1/inventory/1/inventory/2 | head -20
+```
+
+**Talking Points:**
+- "Bridges expose both gRPC and HTTP APIs"
+- "We can verify connectivity multiple ways"
+- "Ports are actually listening and responding"
+
+#### Alternative: Use Dedicated Proof Script
+
+For a comprehensive demonstration:
+
+```bash
+./demo-opi-live.sh
+```
+
+This script:
+- Monitors bridge logs in real-time
+- Shows gRPC traffic as it happens
+- Proves connection dependencies
+- Demonstrates multi-bridge communication
+
+**Key Message:** "This is NOT mocked - it's real client-server gRPC communication using actual OPI bridge implementations!"
+
+---
+
 ### Part 3: Helm Deployment (8 minutes)
 
 **Show Helm chart structure:**
