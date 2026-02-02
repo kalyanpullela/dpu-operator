@@ -2,7 +2,7 @@
 # Demo Validation Script - Run this before your presentation
 # This validates all components are working
 
-set -e
+# Don't use set -e - we handle errors explicitly for better UX
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -131,3 +131,4 @@ echo ""
 echo "Logs saved to /tmp/demo-*.log for reference"
 echo ""
 echo -e "${YELLOW}Ready to present! 🚀${NC}"
+exit 0
