@@ -69,8 +69,8 @@ func BenchmarkPluginRegistry_Lookup(b *testing.B) {
 // BenchmarkPluginRegistry_LookupByPCIID benchmarks plugin lookup by PCI device ID.
 func BenchmarkPluginRegistry_LookupByPCIID(b *testing.B) {
 	tests := []struct {
-		name        string
-		pluginCount int
+		name             string
+		pluginCount      int
 		devicesPerPlugin int
 	}{
 		{"Small_10plugins_1device", 10, 1},

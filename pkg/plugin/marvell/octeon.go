@@ -215,18 +215,18 @@ func (p *OcteonPlugin) scanPCIBus(ctx context.Context) ([]plugin.Device, error) 
 		for _, pciDev := range pciDevices {
 			// Create plugin device from PCI device
 			device := plugin.Device{
-				ID:          fmt.Sprintf("marvell-%s", pciDev.Address),
-				PCIAddress:  pciDev.Address,
-				Vendor:      "Marvell",
-				Model:       supportedDevice.Description,
-				Healthy:     true,
+				ID:         fmt.Sprintf("marvell-%s", pciDev.Address),
+				PCIAddress: pciDev.Address,
+				Vendor:     "Marvell",
+				Model:      supportedDevice.Description,
+				Healthy:    true,
 				Metadata: map[string]string{
-					"pci_vendor_id":   pciDev.VendorID,
-					"pci_device_id":   pciDev.DeviceID,
-					"pci_class":       pciDev.Class,
-					"device_type":     supportedDevice.Description,
-					"driver":          pciDev.Driver,
-					"numa_node":       pciDev.NumaNode,
+					"pci_vendor_id": pciDev.VendorID,
+					"pci_device_id": pciDev.DeviceID,
+					"pci_class":     pciDev.Class,
+					"device_type":   supportedDevice.Description,
+					"driver":        pciDev.Driver,
+					"numa_node":     pciDev.NumaNode,
 				},
 			}
 

@@ -93,7 +93,7 @@ func (r *DataProcessingUnitReconciler) getPluginForDPU(logger logr.Logger, dpu *
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) &&
 		(s == substr ||
-		 findSubstring(strings.ToLower(s), strings.ToLower(substr)))
+			findSubstring(strings.ToLower(s), strings.ToLower(substr)))
 }
 
 func findSubstring(s, substr string) bool {

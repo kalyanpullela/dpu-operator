@@ -24,10 +24,10 @@ import (
 
 	// Import all plugins to trigger init() registration
 	_ "github.com/openshift/dpu-operator/pkg/plugin/intel"
+	_ "github.com/openshift/dpu-operator/pkg/plugin/mangoboost"
 	_ "github.com/openshift/dpu-operator/pkg/plugin/marvell"
 	_ "github.com/openshift/dpu-operator/pkg/plugin/nvidia"
 	_ "github.com/openshift/dpu-operator/pkg/plugin/xsight"
-	_ "github.com/openshift/dpu-operator/pkg/plugin/mangoboost"
 )
 
 // TestPluginRegistry_AllPluginsRegistered verifies all expected plugins are registered
@@ -78,7 +78,7 @@ func TestPluginRegistry_CapabilityQueries(t *testing.T) {
 	registry := plugin.DefaultRegistry()
 
 	testCases := []struct {
-		capability plugin.Capability
+		capability  plugin.Capability
 		minExpected int
 	}{
 		{plugin.CapabilityNetworking, 1}, // At least one plugin should support networking
@@ -117,9 +117,9 @@ func TestPluginRegistry_PCIDeviceLookup(t *testing.T) {
 	registry := plugin.DefaultRegistry()
 
 	testCases := []struct {
-		name     string
-		vendorID string
-		deviceID string
+		name         string
+		vendorID     string
+		deviceID     string
 		expectPlugin string
 	}{
 		{"NVIDIA BlueField-2", "15b3", "a2d6", "nvidia"},

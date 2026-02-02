@@ -10,14 +10,14 @@ import (
 
 // Device represents a PCI device discovered on the system
 type Device struct {
-	Address      string // e.g., "0000:03:00.0"
-	VendorID     string // e.g., "15b3"
-	DeviceID     string // e.g., "a2d6"
+	Address           string // e.g., "0000:03:00.0"
+	VendorID          string // e.g., "15b3"
+	DeviceID          string // e.g., "a2d6"
 	SubsystemVendorID string
 	SubsystemDeviceID string
-	Class        string
-	Driver       string
-	NumaNode     string
+	Class             string
+	Driver            string
+	NumaNode          string
 }
 
 // Scanner scans for PCI devices on the system
