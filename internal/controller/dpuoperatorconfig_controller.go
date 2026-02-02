@@ -94,7 +94,7 @@ func (r *DpuOperatorConfigReconciler) logDiscoveredPlugins(logger logr.Logger) {
 
 		// Record plugin capabilities
 		for _, cap := range info.Capabilities {
-			metrics.RecordPluginCapability(info.Name, cap, true)
+			metrics.RecordPluginCapability(info.Name, string(cap), true)
 		}
 	}
 }
