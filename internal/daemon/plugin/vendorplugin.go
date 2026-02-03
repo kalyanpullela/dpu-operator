@@ -75,7 +75,7 @@ func (g *GrpcPlugin) Start(ctx context.Context) (string, int32, error) {
 		if err != nil {
 			if strings.Contains(err.Error(), "already initialized") {
 				// VSP was already initialized, mark as initialized and return the error
-				g.SetInitDone(false)
+				g.SetInitDone(true)
 				return "", 0, err
 			}
 			select {

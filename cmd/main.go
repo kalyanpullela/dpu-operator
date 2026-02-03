@@ -27,6 +27,13 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	// Import vendor plugins to register them in the global registry
+	_ "github.com/openshift/dpu-operator/pkg/plugin/intel"
+	_ "github.com/openshift/dpu-operator/pkg/plugin/mangoboost"
+	_ "github.com/openshift/dpu-operator/pkg/plugin/marvell"
+	_ "github.com/openshift/dpu-operator/pkg/plugin/nvidia"
+	_ "github.com/openshift/dpu-operator/pkg/plugin/xsight"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -45,8 +52,12 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
-func webhookReadinessCheck(mgr ctrl.Manager) healthz.Checker {
+func webhookReadinessCheck(mgr ctrl.Manager, enabled bool) healthz.Checker {
 	return func(req *http.Request) error {
+		if !enabled {
+			return nil // Webhooks disabled, always ready
+		}
+
 		// Check if webhook TLS server is ready by trying to connect
 		conn, err := tls.Dial("tcp", ":9443", &tls.Config{InsecureSkipVerify: true})
 		if err != nil {
@@ -152,7 +163,8 @@ func main() {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
-	if err := mgr.AddReadyzCheck("readyz", webhookReadinessCheck(mgr)); err != nil {
+	webhooksEnabled := os.Getenv("ENABLE_WEBHOOKS") != "false"
+	if err := mgr.AddReadyzCheck("readyz", webhookReadinessCheck(mgr, webhooksEnabled)); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}

@@ -58,40 +58,13 @@ kubectl apply -f config/manager/
 Create a `DpuOperatorConfig` to configure the operator:
 
 ```yaml
-apiVersion: dpu.openshift.io/v2
+apiVersion: config.openshift.io/v1
 kind: DpuOperatorConfig
 metadata:
-  name: default
+  name: dpu-operator-config
 spec:
-  # Mode: "host" for running on host nodes, "dpu" for running on DPU nodes
-  mode: host
-  
   # Log verbosity (0-10)
   logLevel: 0
-  
-  # Generic (vendor-neutral) settings
-  generic:
-    # Network mode: switchdev, legacy, or offload
-    networkMode: switchdev
-    
-    # Enable storage offload (NVMe-oF)
-    storageOffloadEnabled: false
-    
-    # Enable security offload (IPsec)
-    securityPolicyEnabled: false
-    
-    # Default VF count for all DPUs
-    vfCount: 16
-    
-    # OPI gRPC endpoint
-    opiEndpoint: "localhost:50051"
-  
-  # Vendor-specific configuration
-  vendorConfigs:
-    - vendor: nvidia
-      enabled: true
-      inline:
-        docaVersion: "2.2"
 ```
 
 Apply:
@@ -100,48 +73,12 @@ Apply:
 kubectl apply -f dpuoperatorconfig.yaml
 ```
 
+**Note**: The name must be `dpu-operator-config` as enforced by the validating webhook.
+
 ### Vendor-Specific Configuration
 
-Each vendor may have specific configuration options.
-
-#### NVIDIA BlueField
-
-```yaml
-vendorConfigs:
-  - vendor: nvidia
-    enabled: true
-    inline:
-      # DOCA SDK path
-      docaPath: /opt/mellanox/doca
-      # Enable SNAP for NVMe emulation
-      snapEnabled: true
-      # Enable OVS-DOCA for hardware offload
-      ovsDoca: true
-```
-
-#### Intel IPU
-
-```yaml
-vendorConfigs:
-  - vendor: intel
-    enabled: true
-    inline:
-      # P4 program to load
-      p4Program: "default.p4"
-      # Enable IMC (Infrastructure Management Complex)
-      imcEnabled: true
-```
-
-#### Marvell Octeon
-
-```yaml
-vendorConfigs:
-  - vendor: marvell
-    enabled: true
-    inline:
-      # SDK version
-      sdkVersion: "1.0"
-```
+Vendor-specific configuration is managed through environment variables and ConfigMaps.
+See the vendor-specific plugin documentation for details on configuration options.
 
 ## Discovering DPUs
 
@@ -182,66 +119,37 @@ kubectl get dpu dpu-node1-bf2-0 -o jsonpath='{.status.inventory}' | jq
 kubectl get dpu dpu-node1-bf2-0 -o jsonpath='{.status.health}' | jq
 ```
 
-### Configuring VF Count
+### DPU Configuration
 
-To change the VF count for a specific DPU:
+DataProcessingUnit resources are automatically created by the operator when DPUs are discovered.
+The spec contains the following fields:
 
 ```yaml
-apiVersion: dpu.openshift.io/v2
+apiVersion: config.openshift.io/v1
 kind: DataProcessingUnit
 metadata:
   name: dpu-node1-bf2-0
 spec:
-  vendor: nvidia
-  model: BlueField-2
+  # Product name from detection
+  dpuProductName: "nvidia-bf"
+  # Whether this is the DPU-side (true) or host-side (false)
+  isDpuSide: false
+  # Node where the DPU is located
   nodeName: node1
-  desiredVfCount: 32  # Request 32 VFs
 ```
 
-### Per-DPU Configuration
+These resources are typically managed by the operator and should not be manually edited.
 
-Override cluster-wide settings for a specific DPU:
+## DPU Features
 
-```yaml
-apiVersion: dpu.openshift.io/v2
-kind: DataProcessingUnit
-metadata:
-  name: dpu-node1-bf2-0
-spec:
-  vendor: nvidia
-  model: BlueField-2
-  nodeName: node1
-  configuration:
-    networkMode: offload  # Override to use full offload
-    storageOffloadEnabled: true  # Enable storage for this DPU
-```
+The operator manages DPU hardware discovery, health monitoring, and integration with
+Kubernetes. Specific features and capabilities depend on the DPU vendor and model:
 
-## Network Offload
+- **Network Offload**: SR-IOV VF management and hardware flow offload
+- **Storage Offload**: NVMe-oF and SPDK/SNAP integration (vendor-specific)
+- **Security Offload**: IPsec and TLS acceleration (vendor-specific)
 
-### Bridge Ports
-
-The operator automatically configures bridge ports for SR-IOV-enabled pods.
-
-### Flow Offload
-
-With `networkMode: offload` or `networkMode: switchdev`, the operator
-configures hardware flow offload for improved performance.
-
-## Storage Offload (Optional)
-
-When `storageOffloadEnabled: true`, the operator configures NVMe-oF offload:
-
-1. Creates NVMe subsystems on the DPU
-2. Exposes storage backends to host pods
-3. Provides transparent storage access with hardware acceleration
-
-## Security Offload (Optional)
-
-When `securityPolicyEnabled: true`, the operator configures IPsec offload:
-
-1. Creates IPsec tunnels with hardware acceleration
-2. Offloads encryption/decryption to DPU
-3. Provides transparent security for pod traffic
+Refer to vendor plugin documentation for specific feature availability and configuration.
 
 ## Monitoring
 

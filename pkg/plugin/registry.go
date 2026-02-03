@@ -82,7 +82,8 @@ func (r *Registry) Register(p Plugin) error {
 		if existingPlugin, exists := r.deviceIndex[deviceKey]; exists {
 			// Multiple plugins support the same device - log warning but allow
 			// The first registered plugin takes precedence
-			_ = existingPlugin // Acknowledge but continue
+			fmt.Printf("WARNING: Device %s already claimed by plugin %s, ignoring registration by plugin %s\n",
+				deviceKey, existingPlugin, info.Name)
 		} else {
 			r.deviceIndex[deviceKey] = info.Name
 		}

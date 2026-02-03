@@ -19,6 +19,7 @@ package metrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -197,6 +198,43 @@ func RecordDeviceHealth(vendor, model, node, deviceID string, healthy bool) {
 	DeviceHealthStatus.WithLabelValues(vendor, model, node, deviceID).Set(value)
 }
 
+// classifyError classifies errors into fixed categories to avoid unbounded cardinality in metrics
+func classifyError(err error) string {
+	if err == nil {
+		return "none"
+	}
+
+	// Check for Kubernetes API errors first
+	switch {
+	case apierrors.IsNotFound(err):
+		return "not_found"
+	case apierrors.IsAlreadyExists(err):
+		return "already_exists"
+	case apierrors.IsConflict(err):
+		return "conflict"
+	case apierrors.IsInvalid(err):
+		return "invalid"
+	case apierrors.IsTimeout(err):
+		return "timeout"
+	case apierrors.IsServerTimeout(err):
+		return "server_timeout"
+	case apierrors.IsServiceUnavailable(err):
+		return "service_unavailable"
+	case apierrors.IsTooManyRequests(err):
+		return "rate_limited"
+	case apierrors.IsUnauthorized(err):
+		return "unauthorized"
+	case apierrors.IsForbidden(err):
+		return "forbidden"
+	case apierrors.IsBadRequest(err):
+		return "bad_request"
+	case apierrors.IsInternalError(err):
+		return "internal_error"
+	default:
+		return "unknown"
+	}
+}
+
 // RecordReconciliation records reconciliation metrics
 func RecordReconciliation(controller string, duration float64, err error) {
 	ReconciliationDuration.WithLabelValues(controller).Observe(duration)
@@ -204,7 +242,7 @@ func RecordReconciliation(controller string, duration float64, err error) {
 	result := "success"
 	if err != nil {
 		result = "error"
-		ReconciliationErrors.WithLabelValues(controller, err.Error()).Inc()
+		ReconciliationErrors.WithLabelValues(controller, classifyError(err)).Inc()
 	}
 	ReconciliationTotal.WithLabelValues(controller, result).Inc()
 }

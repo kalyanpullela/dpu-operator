@@ -26,6 +26,7 @@ import (
 	evpnpb "github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go"
 	lifecyclepb "github.com/opiproject/opi-api/v1/gen/go/lifecycle/v1alpha1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -146,7 +147,21 @@ func (c *Client) Endpoint() string {
 
 // IsConnected returns true if the client has an active connection.
 func (c *Client) IsConnected() bool {
-	return c.conn != nil
+	if c.conn == nil {
+		return false
+	}
+
+	// Check connection state
+	state := c.conn.GetState()
+	return state == connectivity.Ready || state == connectivity.Idle
+}
+
+// withTimeout wraps a context with the configured call timeout
+func (c *Client) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if c.options.callTimeout > 0 {
+		return context.WithTimeout(ctx, c.options.callTimeout)
+	}
+	return ctx, func() {}
 }
 
 // LifecycleClient provides access to OPI Lifecycle APIs using actual protobuf types.

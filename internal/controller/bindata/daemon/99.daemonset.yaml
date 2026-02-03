@@ -19,8 +19,6 @@ spec:
       hostPID: true
       nodeSelector:
         dpu: "true"
-      securityContext:
-        privileged: true
       containers:
       - name: dpu-daemon
         image: {{.DpuOperatorDaemonImage}}

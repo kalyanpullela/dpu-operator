@@ -199,14 +199,9 @@ func (d *Daemon) Serve(ctx context.Context) error {
 			// Update managed DPUs with newly detected ones
 			d.updateManagedDpus(detectedDpusList)
 
+			// Log DPU count for observability
 			if len(d.managedDpus) > 1 {
-				var keys []string
-				for key := range d.managedDpus {
-					keys = append(keys, key)
-				}
-				err := fmt.Errorf("Detected %d DPUs, but only one is currently supported", len(d.managedDpus))
-				d.log.Error(err, "Got error while detecting DPUs", "dpuKeys", keys)
-				return err
+				d.log.Info("Managing multiple DPUs", "count", len(d.managedDpus))
 			}
 
 			// Create managers for DPUs that don't have them yet
@@ -613,6 +608,10 @@ func (d *Daemon) setOwnerReference(dpuCR *configv1.DataProcessingUnit) error {
 	err := d.client.List(context.TODO(), dpuOperatorConfigList)
 	if err != nil {
 		return fmt.Errorf("failed to list DpuOperatorConfigs: %v", err)
+	}
+
+	if len(dpuOperatorConfigList.Items) == 0 {
+		return fmt.Errorf("no DpuOperatorConfig found in cluster")
 	}
 
 	dpuOperatorConfig := &dpuOperatorConfigList.Items[0]

@@ -9,6 +9,13 @@ import (
 	"github.com/openshift/dpu-operator/internal/platform"
 	"go.uber.org/zap/zapcore"
 
+	// Import vendor plugins to register them in the global registry
+	_ "github.com/openshift/dpu-operator/pkg/plugin/intel"
+	_ "github.com/openshift/dpu-operator/pkg/plugin/mangoboost"
+	_ "github.com/openshift/dpu-operator/pkg/plugin/marvell"
+	_ "github.com/openshift/dpu-operator/pkg/plugin/nvidia"
+	_ "github.com/openshift/dpu-operator/pkg/plugin/xsight"
+
 	"github.com/openshift/dpu-operator/internal/images"
 	"github.com/openshift/dpu-operator/internal/utils"
 	"github.com/spf13/afero"
@@ -36,6 +43,6 @@ func main() {
 	d := daemon.NewDaemon(afero.NewOsFs(), platform, ctrl.GetConfigOrDie(), imageManager, utils.NewPathManager("/"), nodeName)
 	if err := d.PrepareAndServe(context.Background()); err != nil {
 		log.Error(err, "Failed to run daemon")
-		panic(err)
+		os.Exit(1)
 	}
 }

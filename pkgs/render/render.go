@@ -88,9 +88,45 @@ func applyObjectFromBinData(logger logr.Logger, filePath string, data map[string
 	}, existing)
 
 	if err == nil {
-		// Resource exists, return it without trying to update
-		logger.Info("Resource already exists, skipping update", "kind", obj.GetKind(), "name", obj.GetName())
-		return existing, nil
+		// Resource exists, update it
+		logger.Info("Resource exists, updating", "kind", obj.GetKind(), "name", obj.GetName())
+
+		// Preserve immutable fields
+		obj.SetResourceVersion(existing.GetResourceVersion())
+		obj.SetUID(existing.GetUID())
+		obj.SetCreationTimestamp(existing.GetCreationTimestamp())
+
+		// Merge labels
+		existingLabels := existing.GetLabels()
+		newLabels := obj.GetLabels()
+		if existingLabels == nil {
+			existingLabels = make(map[string]string)
+		}
+		for k, v := range newLabels {
+			existingLabels[k] = v
+		}
+		obj.SetLabels(existingLabels)
+
+		// Merge annotations
+		existingAnnotations := existing.GetAnnotations()
+		newAnnotations := obj.GetAnnotations()
+		if existingAnnotations == nil {
+			existingAnnotations = make(map[string]string)
+		}
+		for k, v := range newAnnotations {
+			existingAnnotations[k] = v
+		}
+		obj.SetAnnotations(existingAnnotations)
+
+		// Update the resource
+		err = c.Update(context.TODO(), obj)
+		if err != nil {
+			logger.Error(err, "Failed to update resource", "kind", obj.GetKind(), "name", obj.GetName())
+			return nil, fmt.Errorf("failed to update resource: %v", err)
+		}
+
+		logger.Info("Successfully updated resource", "kind", obj.GetKind(), "name", obj.GetName())
+		return obj, nil
 	} else if !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to check existing resource", "kind", obj.GetKind(), "name", obj.GetName())
 		return nil, fmt.Errorf("failed to check existing resource: %v", err)
