@@ -81,7 +81,7 @@ podLabels: {}
 # Metrics configuration
 metrics:
   enabled: true
-  port: 8080
+  port: 10443
 
   # ServiceMonitor for Prometheus Operator
   serviceMonitor:

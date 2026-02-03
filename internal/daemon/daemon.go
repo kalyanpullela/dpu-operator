@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +18,7 @@ import (
 	"github.com/openshift/dpu-operator/internal/platform"
 	"github.com/openshift/dpu-operator/internal/scheme"
 	"github.com/openshift/dpu-operator/internal/utils"
+	"github.com/openshift/dpu-operator/pkgs/vars"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -41,9 +45,12 @@ type SideManager interface {
 
 // ManagedDpu represents a DPU with all its runtime state and management components
 type ManagedDpu struct {
-	DpuCR   *configv1.DataProcessingUnit
-	Plugin  *plugin.GrpcPlugin
-	Manager SideManager
+	DpuCR          *configv1.DataProcessingUnit
+	Plugin         *plugin.GrpcPlugin
+	Manager        SideManager
+	Cancel         context.CancelFunc
+	Done           chan struct{}
+	AppliedVfCount *int32
 }
 
 type Daemon struct {
@@ -104,8 +111,9 @@ func (d *Daemon) startReadinessServer(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/readyz", d.readinessHandler)
 
+	addr := d.readinessAddress()
 	server := &http.Server{
-		Addr:    ":8082",
+		Addr:    addr,
 		Handler: mux,
 	}
 
@@ -116,12 +124,23 @@ func (d *Daemon) startReadinessServer(ctx context.Context) error {
 		server.Shutdown(shutdownCtx)
 	}()
 
-	d.log.Info("Starting readiness server", "addr", ":8082")
+	d.log.Info("Starting readiness server", "addr", addr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("readiness server failed: %v", err)
 	}
 	d.log.Info("Readiness server exited")
 	return nil
+}
+
+func (d *Daemon) readinessAddress() string {
+	defaultPort := 8082
+	if raw := os.Getenv("DPU_DAEMON_READINESS_PORT"); raw != "" {
+		if port, err := strconv.Atoi(raw); err == nil && port > 0 && port < 65536 {
+			return fmt.Sprintf(":%d", port)
+		}
+		d.log.Info("Invalid DPU_DAEMON_READINESS_PORT, using default", "value", raw, "default", defaultPort)
+	}
+	return fmt.Sprintf(":%d", defaultPort)
 }
 
 // markReady marks the daemon as ready after completing a detection cycle and DPU CR sync
@@ -217,11 +236,14 @@ func (d *Daemon) Serve(ctx context.Context) error {
 					managedDpu.Manager = sideManager
 					d.managers = append(d.managers, sideManager)
 
+					managerCtx, cancel := context.WithCancel(routineCtx)
 					done := make(chan struct{})
 					routineDone = append(routineDone, done)
+					managedDpu.Cancel = cancel
+					managedDpu.Done = done
 					go func(mgr SideManager, identifier string, doneChannel chan struct{}) {
 						defer close(doneChannel)
-						err := d.runSideManager(mgr, identifier, routineCtx)
+						err := d.runSideManager(mgr, identifier, managerCtx)
 						if err != nil {
 							errChan <- err
 						}
@@ -275,6 +297,9 @@ func (d *Daemon) Serve(ctx context.Context) error {
 				d.log.Error(err, "Failed to update node labels")
 				return err
 			}
+
+			// Apply any desired VF count overrides from DataProcessingUnitConfig annotations.
+			d.applyDesiredVfCounts(context.Background())
 
 			// Mark daemon as ready only when DPU CRs are fully in sync
 			// This ensures CRs are queryable before signaling readiness
@@ -474,6 +499,82 @@ func (d *Daemon) conditionsNeedUpdate(current, desired []metav1.Condition) bool 
 		latestCurrent.ObservedGeneration != latestDesired.ObservedGeneration
 }
 
+func (d *Daemon) applyDesiredVfCounts(ctx context.Context) {
+	for name, managed := range d.managedDpus {
+		if managed == nil || managed.Plugin == nil || managed.DpuCR == nil {
+			continue
+		}
+		if managed.DpuCR.Spec.IsDpuSide {
+			continue
+		}
+
+		current := &configv1.DataProcessingUnit{}
+		if err := d.client.Get(ctx, client.ObjectKey{Name: name}, current); err != nil {
+			d.log.V(1).Info("Failed to fetch DPU CR for VF count evaluation", "dpu", name, "error", err)
+			continue
+		}
+
+		desired, ok, err := desiredVfCountFromAnnotations(current.Annotations)
+		if err != nil {
+			d.log.Info("Skipping VF count update due to annotation conflict", "dpu", name, "error", err)
+			continue
+		}
+		if !ok {
+			continue
+		}
+
+		if managed.AppliedVfCount != nil && *managed.AppliedVfCount == desired {
+			continue
+		}
+
+		if _, err := managed.Plugin.SetNumVfs(desired); err != nil {
+			d.log.Info("Failed to apply VF count override", "dpu", name, "vfCount", desired, "error", err)
+			continue
+		}
+
+		managed.AppliedVfCount = &desired
+		d.log.Info("Applied VF count override", "dpu", name, "vfCount", desired)
+	}
+}
+
+func desiredVfCountFromAnnotations(annotations map[string]string) (int32, bool, error) {
+	if len(annotations) == 0 {
+		return 0, false, nil
+	}
+
+	values := map[int32][]string{}
+	for key, value := range annotations {
+		if !strings.HasPrefix(key, vars.DpuConfigVFCountAnnotationPrefix) {
+			continue
+		}
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return 0, false, fmt.Errorf("invalid vfCount %q in %s", value, key)
+		}
+		if parsed <= 0 {
+			return 0, false, fmt.Errorf("vfCount must be > 0 in %s", key)
+		}
+		values[int32(parsed)] = append(values[int32(parsed)], key)
+	}
+
+	if len(values) == 0 {
+		return 0, false, nil
+	}
+
+	if len(values) > 1 {
+		conflicts := make([]string, 0, len(values))
+		for value, sources := range values {
+			conflicts = append(conflicts, fmt.Sprintf("%d=%v", value, sources))
+		}
+		return 0, false, fmt.Errorf("conflicting vfCount annotations: %s", strings.Join(conflicts, "; "))
+	}
+
+	for value := range values {
+		return value, true, nil
+	}
+	return 0, false, nil
+}
+
 func (d *Daemon) updateManagedDpus(detectedDpusList []*platform.DetectedDpuWithPlugin) {
 	// Create a map of currently detected DPUs for easy lookup
 	currentlyDetected := make(map[string]*platform.DetectedDpuWithPlugin)
@@ -500,8 +601,23 @@ func (d *Daemon) updateManagedDpus(detectedDpusList []*platform.DetectedDpuWithP
 	for identifier := range d.managedDpus {
 		if _, stillDetected := currentlyDetected[identifier]; !stillDetected {
 			d.log.Info("Removing no longer detected DPU", "identifier", identifier)
+			managed := d.managedDpus[identifier]
+			if managed != nil {
+				if managed.Cancel != nil {
+					managed.Cancel()
+				}
+				if managed.Plugin != nil {
+					managed.Plugin.Close()
+				}
+				if managed.Done != nil {
+					select {
+					case <-managed.Done:
+					case <-time.After(5 * time.Second):
+						d.log.Info("Timed out waiting for side manager shutdown", "identifier", identifier)
+					}
+				}
+			}
 			delete(d.managedDpus, identifier)
-			// TODO: properly clean up managers
 		}
 	}
 }
@@ -603,18 +719,12 @@ func (d *Daemon) updateNodeLabels() error {
 
 // setOwnerReference sets the DpuOperatorConfig as the owner of the DataProcessingUnit CR
 func (d *Daemon) setOwnerReference(dpuCR *configv1.DataProcessingUnit) error {
-	// Find the DpuOperatorConfig that should own this DPU CR
-	dpuOperatorConfigList := &configv1.DpuOperatorConfigList{}
-	err := d.client.List(context.TODO(), dpuOperatorConfigList)
+	// Find the canonical DpuOperatorConfig by name.
+	dpuOperatorConfig := &configv1.DpuOperatorConfig{}
+	err := d.client.Get(context.TODO(), client.ObjectKey{Name: vars.DpuOperatorConfigName}, dpuOperatorConfig)
 	if err != nil {
-		return fmt.Errorf("failed to list DpuOperatorConfigs: %v", err)
+		return fmt.Errorf("failed to get DpuOperatorConfig %q: %v", vars.DpuOperatorConfigName, err)
 	}
-
-	if len(dpuOperatorConfigList.Items) == 0 {
-		return fmt.Errorf("no DpuOperatorConfig found in cluster")
-	}
-
-	dpuOperatorConfig := &dpuOperatorConfigList.Items[0]
 
 	// Set the owner reference
 	if err := ctrl.SetControllerReference(dpuOperatorConfig, dpuCR, d.client.Scheme()); err != nil {

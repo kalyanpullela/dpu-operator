@@ -1,13 +1,14 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: dpu-operator-system
+  name: openshift-dpu-operator
   labels:
     # Pod Security Standards enforcement
     # https://kubernetes.io/docs/concepts/security/pod-security-standards/
-    pod-security.kubernetes.io/enforce: restricted
-    pod-security.kubernetes.io/audit: restricted
-    pod-security.kubernetes.io/warn: restricted
+    # The daemon/VSP pods require privileged access.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
     # OpenShift Security Context Constraints
     security.openshift.io/scc.podSecurityLabelSync: "false"
 ---
@@ -15,7 +16,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: dpu-operator-controller-manager
-  namespace: dpu-operator-system
+  namespace: openshift-dpu-operator
 automountServiceAccountToken: true
 ---
 # SecurityContext defaults for restricted Pod Security Standard
@@ -24,7 +25,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: security-context-defaults
-  namespace: dpu-operator-system
+  namespace: openshift-dpu-operator
 data:
   pod-security-context.yaml: |
     runAsNonRoot: true
@@ -50,7 +51,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: deny-all-default
-  namespace: dpu-operator-system
+  namespace: openshift-dpu-operator
 spec:
   podSelector: {}
   policyTypes:
@@ -62,7 +63,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: operator-egress
-  namespace: dpu-operator-system
+  namespace: openshift-dpu-operator
 spec:
   podSelector:
     matchLabels:
@@ -117,7 +118,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-metrics-scraping
-  namespace: dpu-operator-system
+  namespace: openshift-dpu-operator
 spec:
   podSelector:
     matchLabels:
@@ -132,21 +133,21 @@ spec:
               name: openshift-monitoring
       ports:
         - protocol: TCP
-          port: 8080
+          port: 10443
     - from:
         - namespaceSelector:
             matchLabels:
               name: openshift-user-workload-monitoring
       ports:
         - protocol: TCP
-          port: 8080
+          port: 10443
 ---
 # Network Policy: Allow webhook traffic
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-webhook-traffic
-  namespace: dpu-operator-system
+  namespace: openshift-dpu-operator
 spec:
   podSelector:
     matchLabels:
@@ -166,7 +167,7 @@ apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: dpu-operator-quota
-  namespace: dpu-operator-system
+  namespace: openshift-dpu-operator
 spec:
   hard:
     requests.cpu: "4"
@@ -181,7 +182,7 @@ apiVersion: v1
 kind: LimitRange
 metadata:
   name: dpu-operator-limits
-  namespace: dpu-operator-system
+  namespace: openshift-dpu-operator
 spec:
   limits:
     - max:

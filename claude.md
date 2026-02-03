@@ -4,7 +4,7 @@ This repository contains the unified, vendor-agnostic Kubernetes DPU (Data Proce
 
 The current OpenShift DPU Operator (`github.com/openshift/dpu-operator`) supports Intel IPU E2100, Intel NetSec Accelerator (Senao SX904), and Marvell Octeon 10 as of OpenShift 4.20. However, the existing implementation has vendor-specific logic somewhat hard-coded, lacks a formal plugin registry, and does not yet support NVIDIA BlueField, xSight, or Mangoboost hardware. The OPI Storage and Security APIs are also not integrated.
 
-This project extends the existing operator with: (1) a formal plugin architecture that allows any vendor to implement a standard interface and register with the operator, (2) refactored v2 CRDs that cleanly separate generic configuration from vendor-specific parameters, (3) new vendor plugins for NVIDIA BlueField, xSight, and optionally Mangoboost, and (4) integration of OPI Storage and Security APIs for full DPU offload capabilities.
+This project extends the existing operator with: (1) a formal plugin registry and a hybrid runtime that bridges in-process plugins with the existing VSP gRPC path, (2) new vendor plugins for NVIDIA BlueField, xSight, and optionally Mangoboost, and (3) integration of OPI Storage and Security APIs where vendor bridges are available. The v2 CRD redesign is deferred; v1 remains the active API surface for now.
 
 The Open Programmable Infrastructure (OPI) project, a Linux Foundation initiative, defines the gRPC/protobuf APIs (`github.com/opiproject/opi-api`) and reference bridge implementations (`opi-spdk-bridge`, `opi-nvidia-bridge`, `opi-intel-bridge`, `opi-marvell-bridge`) that this operator leverages for vendor-neutral communication with DPU hardware.
 
@@ -43,14 +43,14 @@ The strategic value proposition is eliminating vendor lock-in: users deploy one 
 ## In Scope
 
 - Plugin architecture design and implementation
-- v2 CRD schema with vendor-neutral core and vendor-specific extension points
+- Hybrid runtime integration (registry plugins + VSP gRPC path)
 - NVIDIA BlueField plugin (discovery, inventory, networking, optional storage)
 - xSight plugin (discovery, inventory, networking)
 - OPI Storage API integration (NVMe-oF frontend/backend)
 - OPI Security API integration (IPsec offload)
 - Unit tests, integration tests (Kind), emulation tests (OPI mock servers)
 - Documentation for users and plugin developers
-- Backward compatibility with existing v1 CRDs via conversion webhooks
+- Backward compatibility with existing v1 CRDs
 
 ## Out of Scope
 
@@ -79,7 +79,7 @@ The strategic value proposition is eliminating vendor lock-in: users deploy one 
 
 ## Current CRD Limitations
 
-The v1 CRDs mix generic and vendor-specific fields in a single flat structure. Adding a new vendor requires modifying the core CRD types, which violates separation of concerns. The `DpuOperatorConfig` spec does not have a clean extension mechanism for vendor-specific configuration.
+The v1 CRDs mix generic and vendor-specific fields in a single flat structure. Adding a new vendor requires modifying the core CRD types, which violates separation of concerns. The `DpuOperatorConfig` spec does not have a clean extension mechanism for vendor-specific configuration. A v2 redesign was planned, but is deferred until the runtime integration is fully stabilized.
 
 ## OPI API Integration Status
 
@@ -94,13 +94,18 @@ The v1 CRDs mix generic and vendor-specific fields in a single flat structure. A
 
 ## Current VSP Design Limitations
 
-The existing VSPs are implemented as separate binaries with implicit interfaces. There is no formal Go interface definition, no plugin registry, and no dynamic plugin loading. Adding a new vendor requires:
-- Creating a new VSP binary
-- Adding a new Dockerfile
-- Modifying controller logic to detect and deploy the new VSP
-- Hard-coding vendor detection in multiple places
+The VSPs are implemented as separate binaries and remain required for hardware
+bring-up and for establishing the host↔DPU communication channel. The operator
+now has a formal Go plugin interface and registry, and the daemon can use
+registry plugins for discovery/VF configuration with safe fallback to VSP.
 
-This design does not scale and creates maintenance burden.
+Adding a new vendor still requires:
+- Creating or adopting a VSP (or OPI bridge) that can initialize the hardware
+- Providing a plugin implementation for metadata and discovery
+- Supplying container images and manifests for deployment
+
+The hybrid model reduces hard-coded vendor logic but does not yet provide
+dynamic plugin loading.
 
 ## Existing OPI Bridge Implementations
 
@@ -141,37 +146,39 @@ Plugins declare which capability interfaces they implement via the `Capabilities
 - Provides lookup by plugin name or PCI vendor:device ID
 - Supports capability queries ("give me all plugins supporting storage")
 
-## Vendor-Neutral CRD Design (v2)
+**Hybrid Runtime Integration:** The daemon now supports a hybrid runtime model:
+- The existing VSP gRPC path remains authoritative for hardware bring-up and
+  for establishing the host↔DPU communication channel (VSP `Init` returns the IP/port).
+- Registry plugins are initialized opportunistically in the daemon and used for
+  discovery and VF configuration when available, with safe fallback to the VSP
+  gRPC implementation if a registry plugin is absent or unimplemented.
 
-The v2 CRD schema separates concerns:
+This keeps current behavior intact while allowing in-process plugins to take on
+more responsibility over time without breaking VSP-dependent workflows.
 
-**DpuOperatorConfig v2:**
-- `spec.mode` — "host" or "dpu" (unchanged)
-- `spec.generic` — vendor-neutral settings (networkMode, storageOffload enabled, securityPolicy)
-- `spec.vendorConfig` — extension point with `type` field (vendor name) and either `configMapRef` or `inline` for vendor-specific parameters
+## CRD Strategy (v1 for now)
 
-**Dpu v2:**
-- `spec.vendor` — vendor identifier
-- `spec.model` — hardware model
-- `spec.capabilities` — list of supported capabilities (networking, storage, security)
-- `status` — health, discovered features, firmware version
+The operator continues to use the v1 CRDs in the `config.openshift.io` API group
+as the active, supported surface. A v2 redesign was scoped but deferred until
+the hybrid runtime integration is proven in production. The immediate focus is
+stability and vendor integration rather than schema churn.
 
-**Migration Strategy:**
-- Implement v2 types alongside v1
-- Create conversion webhooks for v1 ↔ v2
-- Deprecate v1 after two releases
-- Document migration path for existing users
+If/when v2 resumes, it should be driven by concrete vendor config requirements
+and migration tooling, not by speculative schema changes.
 
 ## OPI APIs as Canonical Control Plane
 
-All communication with DPU hardware flows through OPI-defined gRPC APIs. The operator core never calls vendor SDKs directly. Instead:
-1. Controller creates/updates Dpu CRs based on plugin discovery
-2. DPU Daemon receives reconciliation requests
-3. Daemon calls the appropriate plugin
-4. Plugin translates to OPI gRPC calls
-5. OPI bridge (running on DPU) translates to vendor SDK
+Where OPI bridges are available, registry plugins communicate via OPI-defined
+gRPC APIs. The operator core never calls vendor SDKs directly. The runtime flow
+is now hybrid:
+1. Controller creates/updates Dpu CRs based on detection
+2. DPU Daemon initializes the VSP to bring up the comm channel
+3. The daemon uses registry plugins for discovery/VF config when available
+4. Registry plugins translate to OPI gRPC calls
+5. OPI bridge (running on DPU or host) translates to vendor SDK
 
-This layering ensures the operator core remains vendor-agnostic.
+This layering keeps the core vendor-agnostic while preserving the existing VSP
+bring-up path.
 
 ## Deployment Models
 
@@ -187,9 +194,9 @@ The plugin architecture supports both models; deployment topology is a configura
 
 2. **All vendor logic behind plugin interfaces:** Any code that touches a vendor SDK, calls vendor-specific APIs, or handles vendor-specific device quirks belongs in a plugin package, never in core.
 
-3. **Backward compatibility:** Existing users on v1 CRDs must be able to upgrade without manual migration. Conversion webhooks handle translation.
+3. **Backward compatibility:** Existing users on v1 CRDs must be able to upgrade without manual migration. Avoid schema churn until a concrete v2 migration plan exists.
 
-4. **Clean separation of CRD fields:** Generic fields that apply to all vendors stay in the core spec. Vendor-specific fields go in the vendorConfig extension point.
+4. **Schema stability first:** Keep the v1 CRDs stable and document vendor-specific configuration via env/configmaps or operator configuration until a v2 design is justified by real needs.
 
 5. **Prefer OPI bridge integration over direct SDK calls:** When an OPI bridge exists (e.g., `opi-nvidia-bridge`), use it via gRPC rather than linking the vendor SDK directly. This reduces binary size, simplifies builds, and leverages community-maintained bridges.
 
@@ -219,42 +226,42 @@ The plugin architecture supports both models; deployment topology is a configura
 
 ---
 
-## Phase 2: CRD v2 and Controller Updates (Weeks 3-5)
+## Phase 2: Hybrid Runtime Integration (Weeks 3-5)
 
-**Goals:** Implement v2 CRDs with vendor-neutral design; update controllers to use plugin registry.
+**Goals:** Wire registry plugins into the daemon while preserving the existing VSP
+bring-up path and avoiding regressions.
 
 **Tasks:**
-- Define v2 Go types in `api/v2/`
-- Generate v2 CRD YAML
-- Implement v1 ↔ v2 conversion webhooks
-- Refactor `DpuOperatorConfig` controller to discover plugins from registry
-- Refactor `Dpu` controller to create Dpu CRs based on plugin discovery results
-- Update DaemonSet generation to be plugin-driven (template per plugin, not hard-coded per vendor)
+- Attach registry plugins to the VSP-backed gRPC plugin
+- Initialize registry plugins from env-based config (OPI endpoints, log level)
+- Use registry plugins for discovery and VF configuration with safe fallback to VSP
+- Update documentation to reflect the hybrid runtime model
 
 **Dependencies:** Phase 1 complete.
 
 **Entry Criteria:** Plugin interface and registry exist.
 
-**Exit Criteria:** v2 CRDs deployed; controllers use registry; existing Intel/Marvell functionality unchanged (tested).
+**Exit Criteria:** Hybrid runtime is enabled; VSP path remains authoritative for
+bring-up; registry plugins improve discovery/VF handling without breaking existing behavior.
 
 ---
 
-## Phase 3: Migrate Existing VSPs to Plugin Interface (Weeks 5-6)
+## Phase 3: Plugin Maturity and Parity (Weeks 5-6)
 
-**Goals:** Refactor Intel and Marvell VSPs to implement the new plugin interface.
+**Goals:** Bring registry plugin behavior closer to VSP parity for supported vendors.
 
 **Tasks:**
-- Create `pkg/plugin/intel/` package implementing `Plugin` interface
-- Create `pkg/plugin/marvell/` package implementing `Plugin` interface
-- Register plugins in `init()` functions
-- Remove hard-coded vendor detection from controllers
-- Verify all existing e2e tests pass
+- Implement missing operations in Intel/Marvell/xSight/Mangoboost plugins
+- Improve unit and emulation coverage for plugin operations
+- Optionally route additional operations (bridge ports, network functions) through
+  registry plugins when mappings are stable
 
 **Dependencies:** Phase 2 complete.
 
-**Entry Criteria:** v2 CRDs and plugin-aware controllers exist.
+**Entry Criteria:** Hybrid runtime stabilized.
 
-**Exit Criteria:** Intel and Marvell plugins implement standard interface; no regression in existing functionality.
+**Exit Criteria:** Registry plugins provide reliable device discovery and VF control;
+operation parity gaps are documented and shrinking.
 
 ---
 
@@ -346,7 +353,7 @@ The plugin architecture supports both models; deployment topology is a configura
 **Tasks:**
 - Write user documentation (installation, configuration, troubleshooting)
 - Write plugin developer guide (how to add a new vendor)
-- Write migration guide (v1 to v2)
+- Document hybrid runtime behavior and plugin configuration
 - Update README
 - Tag release
 - Build and publish container images
@@ -453,7 +460,7 @@ The plugin architecture supports both models; deployment topology is a configura
 
 ## Go Version and Modules
 
-- Go 1.21 or later
+- Go 1.24 or later
 - Module path: `github.com/openshift/dpu-operator` (or fork path)
 - Vendor dependencies committed (`go mod vendor`)
 
@@ -463,7 +470,6 @@ The plugin architecture supports both models; deployment topology is a configura
 dpu-operator/
 ├── api/
 │   ├── v1/                 # Existing v1 CRD types (keep for compatibility)
-│   └── v2/                 # New v2 CRD types
 ├── cmd/
 │   ├── manager/            # Operator entrypoint
 │   ├── daemon/             # DPU daemon entrypoint
@@ -557,10 +563,9 @@ Always read or re-open `CLAUDE.md` before starting significant work. If details 
 ## When Touching CRDs
 
 1. Preserve v1 types in `api/v1/`
-2. Implement changes in v2 types in `api/v2/`
-3. Update or create conversion webhooks for v1 ↔ v2
-4. Regenerate CRD YAML (`make manifests`)
-5. Update documentation with migration instructions
+2. Avoid schema churn unless required; document any behavior changes
+3. Regenerate CRD YAML (`make manifests`)
+4. Update documentation to match the v1 schema
 
 ## When Integrating OPI APIs or Bridge Repos
 
@@ -568,6 +573,7 @@ Always read or re-open `CLAUDE.md` before starting significant work. If details 
 2. Create thin wrappers in `pkg/opi/` if needed for convenience
 3. Never expose vendor-specific types from OPI bridges in core controller logic
 4. Use gRPC clients configured with appropriate endpoints (configurable via DpuOperatorConfig)
+   or environment variables (`DPU_PLUGIN_OPI_ENDPOINT` / `DPU_PLUGIN_OPI_ENDPOINT_<VENDOR>` in hybrid mode)
 5. Handle gRPC errors gracefully with retries and logging
 
 ## Generating Tests and Documentation
@@ -606,11 +612,13 @@ Do not merge code without corresponding tests.
 
 2. **Development strategy:** Fork `openshift/dpu-operator`, build features, then contribute upstream. This allows faster iteration without blocking on upstream review cycles.
 
-3. **Kubernetes compatibility:** Abstract OpenShift-specific dependencies where easy (e.g., use standard K8s APIs when possible); keep OpenShift-specific features (e.g., MachineConfig, OLM) where required for full functionality.
+3. **Hybrid runtime:** Keep the VSP gRPC path for hardware bring-up and comm-channel setup, and use registry plugins for discovery/VF config when available, with safe fallback to VSP. This minimizes risk while enabling incremental migration to in-process plugins.
 
-4. **Vendor priority:** NVIDIA BlueField first (highest demand), then xSight (per CFP requirements), Mangoboost optional.
+4. **Kubernetes compatibility:** Abstract OpenShift-specific dependencies where easy (e.g., use standard K8s APIs when possible); keep OpenShift-specific features (e.g., MachineConfig, OLM) where required for full functionality.
 
-5. **Storage/Security integration:** Implement as optional capabilities; not required for MVP but differentiating.
+5. **Vendor priority:** NVIDIA BlueField first (highest demand), then xSight (per CFP requirements), Mangoboost optional.
+
+6. **Storage/Security integration:** Implement as optional capabilities; not required for MVP but differentiating.
 
 ## Risk Assessment
 

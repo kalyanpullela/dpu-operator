@@ -76,9 +76,7 @@ func (p *MangoBoostPlugin) Info() plugin.PluginInfo {
 		Version:          PluginVersion,
 		Description:      "MangoBoost DPU plugin for MangoBoost hardware",
 		SupportedDevices: supportedDevices,
-		Capabilities: []plugin.Capability{
-			plugin.CapabilityNetworking,
-		},
+		Capabilities:     []plugin.Capability{},
 	}
 }
 
@@ -214,17 +212,8 @@ func (p *MangoBoostPlugin) CreateBridgePort(ctx context.Context, request *plugin
 		return nil, plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Creating bridge port", "name", request.Name, "mac", request.MACAddress)
-
-	port := &plugin.BridgePort{
-		ID:         fmt.Sprintf("bp-%s", request.Name),
-		Name:       request.Name,
-		MACAddress: request.MACAddress,
-		VLANID:     request.VLANID,
-		Status:     "Active",
-	}
-
-	return port, nil
+	p.log.Info("CreateBridgePort not implemented for MangoBoost plugin", "name", request.Name)
+	return nil, plugin.ErrNotImplemented
 }
 
 // DeleteBridgePort removes a bridge port.
@@ -236,8 +225,8 @@ func (p *MangoBoostPlugin) DeleteBridgePort(ctx context.Context, portID string) 
 		return plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Deleting bridge port", "portID", portID)
-	return nil
+	p.log.Info("DeleteBridgePort not implemented for MangoBoost plugin", "portID", portID)
+	return plugin.ErrNotImplemented
 }
 
 // GetBridgePort retrieves information about a bridge port.
@@ -273,8 +262,8 @@ func (p *MangoBoostPlugin) SetVFCount(ctx context.Context, deviceID string, coun
 		return plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Setting VF count", "deviceID", deviceID, "count", count)
-	return nil
+	p.log.Info("SetVFCount not implemented for MangoBoost plugin", "deviceID", deviceID, "count", count)
+	return plugin.ErrNotImplemented
 }
 
 // GetVFCount returns the current number of virtual functions.
@@ -286,7 +275,7 @@ func (p *MangoBoostPlugin) GetVFCount(ctx context.Context, deviceID string) (int
 		return 0, plugin.ErrNotInitialized
 	}
 
-	return 0, nil
+	return 0, plugin.ErrNotImplemented
 }
 
 // CreateNetworkFunction sets up a network function between input and output ports.
@@ -298,8 +287,8 @@ func (p *MangoBoostPlugin) CreateNetworkFunction(ctx context.Context, input, out
 		return plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Creating network function", "input", input, "output", output)
-	return nil
+	p.log.Info("CreateNetworkFunction not implemented for MangoBoost plugin", "input", input, "output", output)
+	return plugin.ErrNotImplemented
 }
 
 // DeleteNetworkFunction removes a network function.
@@ -311,8 +300,8 @@ func (p *MangoBoostPlugin) DeleteNetworkFunction(ctx context.Context, input, out
 		return plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Deleting network function", "input", input, "output", output)
-	return nil
+	p.log.Info("DeleteNetworkFunction not implemented for MangoBoost plugin", "input", input, "output", output)
+	return plugin.ErrNotImplemented
 }
 
 // Ensure MangoBoostPlugin implements the required interfaces.

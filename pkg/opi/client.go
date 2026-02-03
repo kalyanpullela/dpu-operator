@@ -24,7 +24,7 @@ import (
 	"time"
 
 	evpnpb "github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go"
-	lifecyclepb "github.com/opiproject/opi-api/v1/gen/go/lifecycle/v1alpha1"
+	lifecyclepb "github.com/opiproject/opi-api/v1/gen/go/lifecycle"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
@@ -86,9 +86,12 @@ func NewClient(endpoint string, opts ...ClientOption) (*Client, error) {
 		opt(options)
 	}
 
-	// Use non-blocking dial so initialization doesn't hang if server is unavailable
-	conn, err := grpc.DialContext(context.Background(), endpoint,
+	// Use a bounded dial so initialization doesn't hang forever if server is unavailable.
+	ctx, cancel := context.WithTimeout(context.Background(), options.dialTimeout)
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, endpoint,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to OPI endpoint %s: %w", endpoint, err)
@@ -183,18 +186,31 @@ func newLifecycleClient(conn *grpc.ClientConn, opts *clientOptions) *LifecycleCl
 	}
 }
 
+func (c *LifecycleClient) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if c.options.callTimeout > 0 {
+		return context.WithTimeout(ctx, c.options.callTimeout)
+	}
+	return ctx, func() {}
+}
+
 // Init initializes the xPU (DPU/IPU).
 func (c *LifecycleClient) Init(ctx context.Context, req *lifecyclepb.InitRequest) (*lifecyclepb.IpPort, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	return c.lifecycleClient.Init(ctx, req)
 }
 
 // GetDevices retrieves available devices managed by the xPU.
 func (c *LifecycleClient) GetDevices(ctx context.Context) (*lifecyclepb.DeviceListResponse, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	return c.deviceClient.GetDevices(ctx, &emptypb.Empty{})
 }
 
 // SetNumVfs configures number of virtual functions for a device.
 func (c *LifecycleClient) SetNumVfs(ctx context.Context, count int32) (*lifecyclepb.VfCount, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	req := &lifecyclepb.VfCount{
 		VfCnt: count,
 	}
@@ -203,6 +219,8 @@ func (c *LifecycleClient) SetNumVfs(ctx context.Context, count int32) (*lifecycl
 
 // Ping checks xPU lifecycle health status.
 func (c *LifecycleClient) Ping(ctx context.Context) (*lifecyclepb.PingResponse, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	req := &lifecyclepb.PingRequest{}
 	return c.heartbeatClient.Ping(ctx, req)
 }
@@ -228,32 +246,49 @@ func newNetworkClient(conn *grpc.ClientConn, opts *clientOptions) *NetworkClient
 	}
 }
 
+func (c *NetworkClient) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if c.options.callTimeout > 0 {
+		return context.WithTimeout(ctx, c.options.callTimeout)
+	}
+	return ctx, func() {}
+}
+
 // --- BridgePort Operations ---
 
 // CreateBridgePort creates a new bridge port.
 func (c *NetworkClient) CreateBridgePort(ctx context.Context, req *evpnpb.CreateBridgePortRequest) (*evpnpb.BridgePort, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	return c.bridgePortClient.CreateBridgePort(ctx, req)
 }
 
 // GetBridgePort retrieves a bridge port by name.
 func (c *NetworkClient) GetBridgePort(ctx context.Context, name string) (*evpnpb.BridgePort, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	req := &evpnpb.GetBridgePortRequest{Name: name}
 	return c.bridgePortClient.GetBridgePort(ctx, req)
 }
 
 // ListBridgePorts lists all bridge ports.
 func (c *NetworkClient) ListBridgePorts(ctx context.Context) (*evpnpb.ListBridgePortsResponse, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	req := &evpnpb.ListBridgePortsRequest{}
 	return c.bridgePortClient.ListBridgePorts(ctx, req)
 }
 
 // UpdateBridgePort updates an existing bridge port.
 func (c *NetworkClient) UpdateBridgePort(ctx context.Context, req *evpnpb.UpdateBridgePortRequest) (*evpnpb.BridgePort, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	return c.bridgePortClient.UpdateBridgePort(ctx, req)
 }
 
 // DeleteBridgePort deletes a bridge port.
 func (c *NetworkClient) DeleteBridgePort(ctx context.Context, name string) error {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	req := &evpnpb.DeleteBridgePortRequest{Name: name}
 	_, err := c.bridgePortClient.DeleteBridgePort(ctx, req)
 	return err
@@ -263,17 +298,23 @@ func (c *NetworkClient) DeleteBridgePort(ctx context.Context, name string) error
 
 // CreateLogicalBridge creates a new logical bridge.
 func (c *NetworkClient) CreateLogicalBridge(ctx context.Context, req *evpnpb.CreateLogicalBridgeRequest) (*evpnpb.LogicalBridge, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	return c.logicalBridgeClient.CreateLogicalBridge(ctx, req)
 }
 
 // GetLogicalBridge retrieves a logical bridge by name.
 func (c *NetworkClient) GetLogicalBridge(ctx context.Context, name string) (*evpnpb.LogicalBridge, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	req := &evpnpb.GetLogicalBridgeRequest{Name: name}
 	return c.logicalBridgeClient.GetLogicalBridge(ctx, req)
 }
 
 // DeleteLogicalBridge deletes a logical bridge.
 func (c *NetworkClient) DeleteLogicalBridge(ctx context.Context, name string) error {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	req := &evpnpb.DeleteLogicalBridgeRequest{Name: name}
 	_, err := c.logicalBridgeClient.DeleteLogicalBridge(ctx, req)
 	return err
@@ -283,17 +324,23 @@ func (c *NetworkClient) DeleteLogicalBridge(ctx context.Context, name string) er
 
 // CreateVrf creates a new VRF.
 func (c *NetworkClient) CreateVrf(ctx context.Context, req *evpnpb.CreateVrfRequest) (*evpnpb.Vrf, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	return c.vrfClient.CreateVrf(ctx, req)
 }
 
 // GetVrf retrieves a VRF by name.
 func (c *NetworkClient) GetVrf(ctx context.Context, name string) (*evpnpb.Vrf, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	req := &evpnpb.GetVrfRequest{Name: name}
 	return c.vrfClient.GetVrf(ctx, req)
 }
 
 // DeleteVrf deletes a VRF.
 func (c *NetworkClient) DeleteVrf(ctx context.Context, name string) error {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	req := &evpnpb.DeleteVrfRequest{Name: name}
 	_, err := c.vrfClient.DeleteVrf(ctx, req)
 	return err
@@ -303,17 +350,23 @@ func (c *NetworkClient) DeleteVrf(ctx context.Context, name string) error {
 
 // CreateSvi creates a new SVI.
 func (c *NetworkClient) CreateSvi(ctx context.Context, req *evpnpb.CreateSviRequest) (*evpnpb.Svi, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	return c.sviClient.CreateSvi(ctx, req)
 }
 
 // GetSvi retrieves an SVI by name.
 func (c *NetworkClient) GetSvi(ctx context.Context, name string) (*evpnpb.Svi, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	req := &evpnpb.GetSviRequest{Name: name}
 	return c.sviClient.GetSvi(ctx, req)
 }
 
 // DeleteSvi deletes an SVI.
 func (c *NetworkClient) DeleteSvi(ctx context.Context, name string) error {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
 	req := &evpnpb.DeleteSviRequest{Name: name}
 	_, err := c.sviClient.DeleteSvi(ctx, req)
 	return err

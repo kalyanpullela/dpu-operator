@@ -30,15 +30,18 @@ import (
 
 	"github.com/openshift/dpu-operator/pkg/plugin"
 	"github.com/openshift/dpu-operator/pkg/plugin/intel"
+	"github.com/openshift/dpu-operator/pkg/plugin/marvell"
 	"github.com/openshift/dpu-operator/pkg/plugin/nvidia"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
 	// OPI bridge endpoints (from docker-compose.yml)
-	nvidiaEndpoint = "localhost:50051"
-	intelEndpoint  = "localhost:50052"
-	spdkEndpoint   = "localhost:50053"
-	marvellEndpoint = "localhost:50054"
+	nvidiaEndpoint     = "localhost:50051"
+	intelEndpoint      = "localhost:50052"
+	spdkEndpoint       = "localhost:50053"
+	marvellEndpoint    = "localhost:50054"
 	strongswanEndpoint = "localhost:50055"
 )
 
@@ -201,6 +204,7 @@ func TestPluginConnectivity(t *testing.T) {
 	}{
 		{"NVIDIA", nvidiaEndpoint, nvidia.New()},
 		{"Intel", intelEndpoint, intel.New()},
+		{"Marvell", marvellEndpoint, marvell.New()},
 	}
 
 	for _, tc := range testCases {
@@ -238,8 +242,9 @@ func TestMultiVendorEmulation(t *testing.T) {
 		plugin   plugin.Plugin
 		endpoint string
 	}{
-		"NVIDIA": {nvidia.New(), nvidiaEndpoint},
-		"Intel":  {intel.New(), intelEndpoint},
+		"NVIDIA":  {nvidia.New(), nvidiaEndpoint},
+		"Intel":   {intel.New(), intelEndpoint},
+		"Marvell": {marvell.New(), marvellEndpoint},
 	}
 
 	// Initialize each plugin
@@ -279,20 +284,15 @@ func TestOPIBridgeAvailability(t *testing.T) {
 	t.Log("Checking OPI bridge availability:")
 	available := 0
 	for name, endpoint := range bridges {
-		// Try to create a simple plugin and connect
-		nvPlugin := nvidia.New()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-
-		config := plugin.PluginConfig{
-			OPIEndpoint: endpoint,
-			LogLevel:    0,
-		}
-
-		err := nvPlugin.Initialize(ctx, config)
+		conn, err := grpc.DialContext(ctx, endpoint,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock(),
+		)
 		cancel()
 
 		if err == nil {
-			nvPlugin.Shutdown(context.Background())
+			_ = conn.Close()
 			t.Logf("  ✓ %s bridge available at %s", name, endpoint)
 			available++
 		} else {

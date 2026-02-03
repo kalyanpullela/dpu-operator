@@ -9,12 +9,12 @@ metadata:
 rules:
   # DPU CRD permissions
   - apiGroups:
-      - dpu.openshift.io
+      - config.openshift.io
     resources:
-      - dpus
-      - dpuservices
-      - dpudeployments
-      - dpuconfigs
+      - dataprocessingunits
+      - dpuoperatorconfigs
+      - dataprocessingunitconfigs
+      - servicefunctionchains
     verbs:
       - create
       - delete
@@ -24,23 +24,23 @@ rules:
       - update
       - watch
   - apiGroups:
-      - dpu.openshift.io
+      - config.openshift.io
     resources:
-      - dpus/status
-      - dpuservices/status
-      - dpudeployments/status
-      - dpuconfigs/status
+      - dataprocessingunits/status
+      - dpuoperatorconfigs/status
+      - dataprocessingunitconfigs/status
+      - servicefunctionchains/status
     verbs:
       - get
       - patch
       - update
   - apiGroups:
-      - dpu.openshift.io
+      - config.openshift.io
     resources:
-      - dpus/finalizers
-      - dpuservices/finalizers
-      - dpudeployments/finalizers
-      - dpuconfigs/finalizers
+      - dataprocessingunits/finalizers
+      - dpuoperatorconfigs/finalizers
+      - dataprocessingunitconfigs/finalizers
+      - servicefunctionchains/finalizers
     verbs:
       - update
 

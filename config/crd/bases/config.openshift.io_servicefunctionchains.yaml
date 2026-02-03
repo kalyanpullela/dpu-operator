@@ -45,10 +45,29 @@ spec:
               networkFunctions:
                 items:
                   properties:
+                    dpuResources:
+                      description: DpuResources specifies DPU resource requests/limits
+                        for the function.
+                      properties:
+                        limits:
+                          description: Limits is the number of DPUs limited.
+                          format: int32
+                          type: integer
+                        requests:
+                          description: Requests is the number of DPUs requested.
+                          format: int32
+                          type: integer
+                      type: object
                     image:
                       type: string
                     name:
                       type: string
+                    networks:
+                      description: Networks is the list of NetworkAttachmentDefinitions
+                        to attach (Multus).
+                      items:
+                        type: string
+                      type: array
                   required:
                   - image
                   - name

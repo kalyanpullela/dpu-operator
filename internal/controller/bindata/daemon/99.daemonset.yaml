@@ -44,6 +44,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: DPU_DAEMON_READINESS_PORT
+          value: "8082"
         volumeMounts:
         - name: devicesock
           mountPath: /var/lib/kubelet/

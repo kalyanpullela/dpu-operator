@@ -13,7 +13,7 @@ import (
 	"github.com/intel/ipu-opi-plugins/ipu-plugin/pkg/types"
 	log "github.com/sirupsen/logrus"
 
-	pb "github.com/opiproject/opi-api/v1/gen/go/lifecycle/v1alpha1"
+	pb "github.com/opiproject/opi-api/v1/gen/go/lifecycle"
 	"google.golang.org/protobuf/types/known/emptypb"
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )

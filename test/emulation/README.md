@@ -65,10 +65,9 @@ docker-compose down
 
 | Plugin | OPI Bridge | Port | Health | Discovery | Network | Storage | Security |
 |--------|-----------|------|--------|-----------|---------|---------|----------|
-| **NVIDIA** | opi-nvidia-bridge | 50051 | ✅ | ✅ | ✅ | 🔶 | ⏳ |
-| **Intel** | opi-intel-bridge | 50052 | ✅ | ✅ | ✅ | 🔶 | ⏳ |
-| **Marvell** | opi-marvell-bridge | 50054 | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **xSight** | (mock only) | - | ✅ | ✅ | 🔶 | ❌ | ❌ |
+| **NVIDIA** | opi-nvidia-bridge | 50051 | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Intel** | opi-intel-bridge | 50052 | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Marvell** | opi-marvell-bridge | 50054 | ✅ | 🔶 | ❌ | ❌ | ❌ |
 
 Legend:
 - ✅ Fully tested
@@ -88,20 +87,20 @@ Legend:
 - Initializes Intel plugin with opi-intel-bridge
 - Tests health checks
 - Tests device discovery
-- Tests bridge port operations
+- Attempts bridge port operations (currently not implemented)
 
 #### `TestPluginConnectivity`
-- Verifies all plugins can connect to their bridges
+- Verifies NVIDIA/Intel/Marvell plugins can connect to their bridges
 - Tests basic connectivity and health
 
 #### `TestMultiVendorEmulation`
 - Simulates a multi-vendor cluster
-- Initializes multiple plugins simultaneously
+- Initializes multiple plugins simultaneously (NVIDIA/Intel/Marvell)
 - Validates they can coexist
 
 #### `TestOPIBridgeAvailability`
 - Prerequisite check
-- Verifies all OPI bridges are running
+- Verifies all configured OPI bridge endpoints accept gRPC connections
 - Identifies which bridges are available
 
 ## Docker Images

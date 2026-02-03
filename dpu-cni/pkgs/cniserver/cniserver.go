@@ -20,8 +20,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// This server implementations is only temporary for testing when the DPU Daemon
-// code has not been implemented.
+// This server handles CNI requests issued by the DPU daemon.
 
 type processRequestFunc func(request *cnitypes.PodRequest) (*cni100.Result, error)
 
@@ -182,22 +181,14 @@ func cniRequestToPodRequest(cr *cnitypes.Request) (*cnitypes.PodRequest, error) 
 	req.NetName = conf.Name
 
 	if conf.DeviceID != "" {
-		// FIXME: Some DeviceIDs are formated differently between CNIs
-		// for instance the sriov CNI uses PCI address from the sriov device plugin
-		// and the nf CNI uses interface names from our internal device plugin
-		/*
-			if sriovtypes.IsPCIDeviceName(conf.DeviceID) {
-				// DeviceID is a PCI address
-			} else if sriovtypes.IsAuxDeviceName(conf.DeviceID) {
-				// DeviceID is an Auxiliary device name - <driver_name>.<kind_of_a_type>.<id>
-				chunks := strings.Split(conf.DeviceID, ".")
-				if chunks[1] != "sf" {
-					return nil, fmt.Errorf("only SF auxiliary devices are supported")
-				}
-			} else {
-				return nil, fmt.Errorf("expected PCI or Auxiliary device name, got - %s", conf.DeviceID)
-			}
-		*/
+		switch conf.DeviceIDType {
+		case cnitypes.DeviceIDTypePCI, cnitypes.DeviceIDTypeNetdev:
+			// Supported types, handled downstream.
+		case cnitypes.DeviceIDTypeAux:
+			return nil, fmt.Errorf("auxiliary device IDs are not supported yet: %s", conf.DeviceID)
+		default:
+			return nil, fmt.Errorf("unsupported device ID format: %s", conf.DeviceID)
+		}
 	}
 
 	req.CNIConf = conf
@@ -211,7 +202,7 @@ func cniRequestToPodRequest(cr *cnitypes.Request) (*cnitypes.PodRequest, error) 
 	return req, nil
 }
 
-// handleCNIRequest will take the CNI request and delegate (TODO) work.
+// handleCNIRequest parses the incoming CNI request and delegates to the handlers.
 func (s *Server) handleCNIRequest(r *http.Request) ([]byte, error) {
 	var cniRq cnitypes.Request
 	b, err := io.ReadAll(r.Body)

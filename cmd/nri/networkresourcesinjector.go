@@ -43,6 +43,10 @@ const (
 func main() {
 	var namespace string
 	var clientCAPaths webhook.ClientCAFlags
+	fatalf := func(format string, args ...interface{}) {
+		glog.Errorf(format, args...)
+		os.Exit(1)
+	}
 
 	/* load configuration */
 	port := flag.Int("port", 8443, "The port on which to serve.")
@@ -65,15 +69,15 @@ func main() {
 	glog.Infof("controlSwitches: %+v", *controlSwitches)
 
 	if !isValidPort(*port) {
-		glog.Fatalf("invalid port number. Choose between 1024 and 65535")
+		fatalf("invalid port number. Choose between 1024 and 65535")
 	}
 
 	if !controlSwitches.IsResourcesNameEnabled() {
-		glog.Fatalf("Input argument for resourceName cannot be empty.")
+		fatalf("Input argument for resourceName cannot be empty.")
 	}
 
 	if *address == "" || *cert == "" || *key == "" {
-		glog.Fatalf("input argument(s) not defined correctly")
+		fatalf("input argument(s) not defined correctly")
 	}
 
 	if len(clientCAPaths) == 0 {
@@ -85,9 +89,9 @@ func main() {
 	}
 
 	if !isValidPort(*healthCheckPort) {
-		glog.Fatalf("Invalid health check port number. Choose between 1024 and 65535")
+		fatalf("Invalid health check port number. Choose between 1024 and 65535")
 	} else if *healthCheckPort == *port {
-		glog.Fatalf("Health check port should be different from port")
+		fatalf("Health check port should be different from port")
 	} else {
 		go func() {
 			addr := fmt.Sprintf("%s:%d", *address, *healthCheckPort)
@@ -98,7 +102,7 @@ func main() {
 			})
 			err := http.ListenAndServe(addr, mux)
 			if err != nil {
-				glog.Fatalf("error starting health check server: %v", err)
+				glog.Errorf("error starting health check server: %v", err)
 			}
 		}()
 	}
@@ -107,12 +111,12 @@ func main() {
 
 	keyPair, err := webhook.NewTlsKeypairReloader(*cert, *key)
 	if err != nil {
-		glog.Fatalf("error load certificate: %s", err.Error())
+		fatalf("error load certificate: %s", err.Error())
 	}
 
 	clientCaPool, err := webhook.NewClientCertPool(&clientCAPaths, *insecure)
 	if err != nil {
-		glog.Fatalf("error loading client CA pool: '%s'", err.Error())
+		fatalf("error loading client CA pool: '%s'", err.Error())
 	}
 
 	/* init API client */
@@ -179,14 +183,14 @@ func main() {
 
 		err := httpServer.ListenAndServeTLS("", "")
 		if err != nil {
-			glog.Fatalf("error starting web server: %v", err)
+			fatalf("error starting web server: %v", err)
 		}
 	}()
 
 	/* watch the cert file and restart http sever if the file updated. */
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		glog.Fatalf("error starting fsnotify watcher: %v", err)
+		fatalf("error starting fsnotify watcher: %v", err)
 	}
 	defer watcher.Close()
 
@@ -215,7 +219,7 @@ func main() {
 				}
 				if keyUpdated && certUpdated {
 					if err := keyPair.Reload(); err != nil {
-						glog.Fatalf("Failed to reload certificate: %v", err)
+						fatalf("Failed to reload certificate: %v", err)
 					}
 					certUpdated = false
 					keyUpdated = false

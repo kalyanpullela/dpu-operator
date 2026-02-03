@@ -20,7 +20,7 @@ import (
 	"github.com/openshift/dpu-operator/internal/utils"
 	"github.com/openshift/dpu-operator/pkgs/vars"
 	pb "github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go"
-	lifecycleapi "github.com/opiproject/opi-api/v1/gen/go/lifecycle/v1alpha1"
+	lifecycleapi "github.com/opiproject/opi-api/v1/gen/go/lifecycle"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"k8s.io/client-go/rest"
@@ -342,6 +342,7 @@ func (d *HostSideManager) Serve(ctx context.Context, listener net.Listener) erro
 		d.log.Info("Context cancelled, shutting down servers")
 		d.cniserver.Shutdown(context.TODO())
 		d.dp.Stop()
+		d.vsp.Close()
 		listener.Close()
 		d.dpListener.Close()
 	}()

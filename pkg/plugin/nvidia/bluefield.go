@@ -90,8 +90,8 @@ func (p *BlueFieldPlugin) Info() plugin.PluginInfo {
 		SupportedDevices: supportedDevices,
 		Capabilities: []plugin.Capability{
 			plugin.CapabilityNetworking,
-			plugin.CapabilityStorage,
-			// plugin.CapabilitySecurity, // TODO: Enable when IPsec offload is implemented
+			// Storage and security capabilities are planned once the OPI bridges
+			// and plugin implementations support those APIs end-to-end.
 		},
 	}
 }

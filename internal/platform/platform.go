@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -105,30 +106,60 @@ func (hp *HardwarePlatform) ReadDeviceSerialNumber(pciDevice *ghw.PCIDevice) (st
 
 	devicePath := filepath.Join("/sys/bus/pci/devices", pciDevice.Address, "config")
 
-	file, err := os.Open(devicePath)
+	data, err := os.ReadFile(devicePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open config space: %v", err)
 	}
-	defer file.Close()
 
-	// Seek to offset 0x150
-	// Capabilities: [150] Device Serial Number 88-dc-97-ff-ff-44-24-8b
-	const serialOffset = 0x150
-	_, err = file.Seek(serialOffset, 0)
+	serial, err := readDeviceSerialFromConfig(data)
 	if err != nil {
-		return "", fmt.Errorf("seek error to device serial number: %v", err)
+		return "", err
+	}
+	return serial, nil
+}
+
+// readDeviceSerialFromConfig searches PCI extended capabilities for the
+// Device Serial Number (DSN) capability and returns it as hex.
+func readDeviceSerialFromConfig(data []byte) (string, error) {
+	// PCIe extended capabilities start at 0x100 and are 4-byte aligned.
+	const extCapStart = 0x100
+	const dsnCapabilityID = 0x0003
+
+	if len(data) < extCapStart+4 {
+		return "", fmt.Errorf("config space too small for extended capabilities")
 	}
 
-	// Read 8 bytes (64-bit serial number) - E.g. 88-dc-97-ff-ff-44-24-8b
-	buf := make([]byte, 8)
-	_, err = file.Read(buf)
-	if err != nil {
-		return "", fmt.Errorf("read error from device serial number: : %v", err)
+	offset := extCapStart
+	visited := map[int]struct{}{}
+	for offset != 0 && offset+4 <= len(data) {
+		if _, seen := visited[offset]; seen {
+			return "", fmt.Errorf("detected loop in PCI extended capabilities")
+		}
+		visited[offset] = struct{}{}
+
+		header := binary.LittleEndian.Uint32(data[offset : offset+4])
+		if header == 0 {
+			break
+		}
+
+		capID := header & 0xFFFF
+		nextPtr := (header >> 20) & 0xFFF
+
+		if capID == dsnCapabilityID {
+			if offset+12 > len(data) {
+				return "", fmt.Errorf("invalid DSN capability length")
+			}
+			serialBytes := data[offset+4 : offset+12]
+			return hex.EncodeToString(serialBytes), nil
+		}
+
+		if nextPtr == 0 {
+			break
+		}
+		offset = int(nextPtr * 4)
 	}
 
-	// Convert raw bytes to hex string
-	serialHex := hex.EncodeToString(buf)
-	return serialHex, nil
+	return "", fmt.Errorf("device serial number capability not found")
 }
 
 // SanitizePCIAddress sanitizes a PCI address or device identifier for use as a Kubernetes cr name

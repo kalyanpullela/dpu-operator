@@ -10,7 +10,7 @@ import (
 	nfapi "github.com/openshift/dpu-operator/dpu-api/gen"
 	"github.com/openshift/dpu-operator/internal/utils"
 	opi "github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go"
-	pb "github.com/opiproject/opi-api/v1/gen/go/lifecycle/v1alpha1"
+	pb "github.com/opiproject/opi-api/v1/gen/go/lifecycle"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 	ctrl "sigs.k8s.io/controller-runtime"

@@ -20,7 +20,7 @@ import (
 	"github.com/openshift/dpu-operator/internal/utils"
 	"github.com/openshift/dpu-operator/pkgs/vars"
 	pb "github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go"
-	lifecycleapi "github.com/opiproject/opi-api/v1/gen/go/lifecycle/v1alpha1"
+	lifecycleapi "github.com/opiproject/opi-api/v1/gen/go/lifecycle"
 	"google.golang.org/grpc"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	"k8s.io/client-go/rest"

@@ -9,6 +9,7 @@ import (
 	"github.com/containernetworking/plugins/pkg/ipam"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/openshift/dpu-operator/dpu-cni/pkgs/cnitypes"
+	"github.com/openshift/dpu-operator/dpu-cni/pkgs/sriovutils"
 	"github.com/vishvananda/netlink"
 	"k8s.io/klog/v2"
 )
@@ -248,11 +249,22 @@ func CmdAdd(req *cnitypes.PodRequest) (*current.Result, error) {
 	result := &current.Result{}
 	var contDev netlink.Link
 
-	// TODO: In the future we may want to support the following formats coming from the device plugin
-	// pciAddr: For Netdev and DPDK use cases
-	// auxDevices: Device plugins may allocate network device on a bus different than PCI
-	// Also this code would not work for DPDK interfaces.
-	hostDev, err := netlink.LinkByName(conf.DeviceID)
+	deviceID := conf.DeviceID
+	switch conf.DeviceIDType {
+	case cnitypes.DeviceIDTypePCI:
+		deviceID, err = sriovutils.GetVFLinkName(conf.DeviceID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve netdev from PCI address %s: %v", conf.DeviceID, err)
+		}
+	case cnitypes.DeviceIDTypeNetdev:
+		// already a netdev name
+	case cnitypes.DeviceIDTypeAux:
+		return nil, fmt.Errorf("auxiliary device IDs are not supported for networkfn CNI: %s", conf.DeviceID)
+	default:
+		return nil, fmt.Errorf("unsupported device ID format for networkfn CNI: %s", conf.DeviceID)
+	}
+
+	hostDev, err := netlink.LinkByName(deviceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find host device: %v", err)
 	}

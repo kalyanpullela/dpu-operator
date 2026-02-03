@@ -14,6 +14,13 @@ responsible for:
 4. **Storage** (optional) - Managing NVMe subsystems, controllers, namespaces
 5. **Security** (optional) - Managing IPsec tunnels
 
+**Architecture note:** Today the operator uses the `pkg/plugin` registry for
+device discovery and metadata (matching PCI IDs, emitting metrics, selecting
+vendors). Runtime device management still flows through vendor VSP pods and the
+gRPC protocol in `internal/daemon/plugin`. The in-process plugin interfaces are
+intended to converge with the runtime path over time; for now, treat the
+registry as the authoritative source of device metadata and capabilities.
+
 ## Getting Started
 
 ### Step 1: Create the Plugin Package
@@ -115,6 +122,9 @@ func init() {
     plugin.MustRegister(New())
 }
 ```
+
+Ensure the operator binary imports your plugin package (a blank import in
+`cmd/main.go`) so the `init()` registration runs at startup.
 
 ### Step 5: Implement Capability Interfaces
 
@@ -326,7 +336,8 @@ Before submitting a new plugin:
 
 See the existing plugin implementations for reference:
 
-- `pkg/plugin/nvidia/`: NVIDIA BlueField (full networking + storage)
-- `pkg/plugin/intel/`: Intel IPU (networking)
-- `pkg/plugin/marvell/`: Marvell Octeon (networking)
-- `pkg/plugin/xsight/`: xSight (networking)
+- `pkg/plugin/nvidia/`: NVIDIA BlueField (networking via OPI bridge; storage planned)
+- `pkg/plugin/intel/`: Intel IPU (discovery/inventory; networking via VSP path)
+- `pkg/plugin/marvell/`: Marvell Octeon (discovery/inventory; networking via VSP path)
+- `pkg/plugin/xsight/`: xSight (experimental discovery/inventory; placeholder PCI IDs)
+- `pkg/plugin/mangoboost/`: MangoBoost (experimental discovery/inventory)

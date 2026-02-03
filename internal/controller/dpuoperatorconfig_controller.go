@@ -108,7 +108,6 @@ func (r *DpuOperatorConfigReconciler) logDiscoveredPlugins(logger logr.Logger) {
 //+kubebuilder:rbac:groups=config.openshift.io,resources=servicefunctionchains,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=config.openshift.io,resources=servicefunctionchains/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=config.openshift.io,resources=servicefunctionchains/finalizers,verbs=create;delete;get;list;patch;update;watch
-//+kubebuilder:rbac:groups="",resources=*,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=*
 //+kubebuilder:rbac:groups="",resources=persistentvolumes,verbs=*
 //+kubebuilder:rbac:groups="",resources=pods,verbs=*
@@ -210,6 +209,11 @@ func (r *DpuOperatorConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err := r.ensureNetworkResourcesInjector(ctx, dpuOperatorConfig); err != nil {
 		logger.Error(err, "Failed to ensure Network Resources Injector is running")
 		reconcileErrors = append(reconcileErrors, componentError{component: "NetworkResourcesInjector", err: err})
+	}
+
+	if err := r.ensureSharedVSPResources(ctx, dpuOperatorConfig); err != nil {
+		logger.Error(err, "Failed to ensure shared VSP resources")
+		reconcileErrors = append(reconcileErrors, componentError{component: "SharedVSPResources", err: err})
 	}
 
 	// Update status based on reconciliation results
@@ -362,6 +366,12 @@ func (r *DpuOperatorConfigReconciler) ensureNetworkResourcesInjector(ctx context
 	logger := log.FromContext(ctx)
 	logger.Info("Create Network Resources Injector")
 	return r.createAndApplyAllFromBinData(logger, "network-resources-injector", cfg)
+}
+
+func (r *DpuOperatorConfigReconciler) ensureSharedVSPResources(ctx context.Context, cfg *configv1.DpuOperatorConfig) error {
+	logger := log.FromContext(ctx)
+	logger.Info("Ensuring shared VSP resources")
+	return r.createAndApplyAllFromBinData(logger, "vsp/shared", cfg)
 }
 func (r *DpuOperatorConfigReconciler) ensureNetworkFunctioNAD(ctx context.Context, cfg *configv1.DpuOperatorConfig) error {
 	logger := log.FromContext(ctx)

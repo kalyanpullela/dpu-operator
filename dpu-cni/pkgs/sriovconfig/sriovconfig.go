@@ -20,6 +20,14 @@ var (
 func LoadConf(n *cnitypes.NetConf, allocator *sriovutils.PCIAllocator) (*cnitypes.NetConf, error) {
 	// DeviceID takes precedence; if we are given a VF pciaddr then work from there
 	if n.DeviceID != "" {
+		if n.DeviceIDType == cnitypes.DeviceIDTypeNetdev {
+			pciAddr, err := sriovutils.GetPciFromNetDev(n.DeviceID)
+			if err != nil {
+				return nil, fmt.Errorf("LoadConf(): failed to resolve PCI address from netdev %s: %v", n.DeviceID, err)
+			}
+			n.DeviceID = pciAddr
+			n.DeviceIDType = cnitypes.DeviceIDTypePCI
+		}
 		// Get rest of the VF information
 		pfName, vfID, err := getVfInfo(n.DeviceID)
 		if err != nil {

@@ -908,7 +908,7 @@ github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go
 github.com/opiproject/opi-api/network/opinetcommon/v1alpha1/gen/go
 # github.com/opiproject/opi-api/v1/gen/go/lifecycle v0.0.0-20251222163009-3317b3692163 => github.com/bn222/opi-api/v1/gen/go/lifecycle v0.0.0-20251222163009-3317b3692163
 ## explicit; go 1.24.3
-github.com/opiproject/opi-api/v1/gen/go/lifecycle/v1alpha1
+github.com/opiproject/opi-api/v1/gen/go/lifecycle
 # github.com/ovn-org/libovsdb v0.6.1-0.20240125124854-03f787b1a892
 ## explicit; go 1.18
 github.com/ovn-org/libovsdb/cache

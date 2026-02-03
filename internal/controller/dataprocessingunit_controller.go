@@ -74,13 +74,25 @@ func (r *DataProcessingUnitReconciler) WithImagePullPolicy(policy string) *DataP
 func (r *DataProcessingUnitReconciler) getPluginForDPU(logger logr.Logger, dpu *configv1.DataProcessingUnit) plugin.Plugin {
 	plugins := r.pluginRegistry.List()
 
-	// Try to match by product name (simple heuristic)
 	productName := dpu.Spec.DpuProductName
+
+	// First, try to match via detector metadata (authoritative mapping)
+	detectorManager := platform.NewDpuDetectorManager(platform.NewHardwarePlatform())
+	if vendorName, err := detectorManager.GetVendorNameByProductName(productName); err == nil {
+		for _, p := range plugins {
+			info := p.Info()
+			if strings.EqualFold(info.Vendor, vendorName) || strings.EqualFold(info.Name, vendorName) {
+				logger.Info("Matched plugin for DPU by vendor mapping", "plugin", info.Name, "vendor", info.Vendor, "productName", productName)
+				return p
+			}
+		}
+	}
+
+	// Fallback: try to match by product name substring (legacy behavior)
 	for _, p := range plugins {
 		info := p.Info()
-		// Simple match - could be improved with better logic
 		if contains(productName, info.Vendor) {
-			logger.Info("Matched plugin for DPU", "plugin", info.Name, "vendor", info.Vendor, "productName", productName)
+			logger.Info("Matched plugin for DPU by fallback heuristic", "plugin", info.Name, "vendor", info.Vendor, "productName", productName)
 			return p
 		}
 	}
@@ -147,8 +159,8 @@ func (r *DataProcessingUnitReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return r.handleDeletion(ctx, dpu)
 	}
 
-	// Get the single DpuOperatorConfig CR to use as owner for VSP resources
-	dpuOperatorConfig, err := r.getSoleDpuOperatorConfig(ctx, dpu.Namespace)
+	// Get the canonical DpuOperatorConfig CR to use as owner for VSP resources
+	dpuOperatorConfig, err := r.getSoleDpuOperatorConfig(ctx)
 	if err != nil {
 		logger.Error(err, "Failed to get DpuOperatorConfig")
 		return ctrl.Result{RequeueAfter: time.Second * 10}, err
@@ -193,13 +205,6 @@ func (r *DataProcessingUnitReconciler) ensureVSPResources(ctx context.Context, d
 		"Args":                      "[]",
 	}
 	templateVars := images.MergeVarsWithImages(r.imageManager, additionalVars)
-
-	// Apply shared VSP resources (ServiceAccount, Roles, etc.) - owned by DpuOperatorConfig
-	// TODO: refcount so that we clean up when the last one is removed
-	err = r.applyVSPResourcesWithTracking(logger, "vsp/shared", templateVars, dpuOperatorConfig, dpu.Name)
-	if err != nil {
-		return fmt.Errorf("failed to apply shared VSP resources: %v", err)
-	}
 
 	// Apply vendor-specific VSP resources (Pod) - owned by DpuOperatorConfig
 	vendorDir, err := r.getVendorDirectory(dpu)
@@ -271,16 +276,13 @@ func (r *DataProcessingUnitReconciler) handleDeletion(ctx context.Context, dpu *
 	return ctrl.Result{}, nil
 }
 
-func (r *DataProcessingUnitReconciler) getSoleDpuOperatorConfig(ctx context.Context, namespace string) (*configv1.DpuOperatorConfig, error) {
-	dpuOperatorConfigList := &configv1.DpuOperatorConfigList{}
-	err := r.List(ctx, dpuOperatorConfigList, client.InNamespace(namespace))
-	if err != nil {
-		return nil, fmt.Errorf("failed to list DpuOperatorConfig: %v", err)
+func (r *DataProcessingUnitReconciler) getSoleDpuOperatorConfig(ctx context.Context) (*configv1.DpuOperatorConfig, error) {
+	dpuOperatorConfig := &configv1.DpuOperatorConfig{}
+	key := client.ObjectKey{Name: vars.DpuOperatorConfigName}
+	if err := r.Get(ctx, key, dpuOperatorConfig); err != nil {
+		return nil, fmt.Errorf("failed to get DpuOperatorConfig %q: %v", vars.DpuOperatorConfigName, err)
 	}
-	if len(dpuOperatorConfigList.Items) == 0 {
-		return nil, fmt.Errorf("no DpuOperatorConfig found in namespace %s", namespace)
-	}
-	return &dpuOperatorConfigList.Items[0], nil
+	return dpuOperatorConfig, nil
 }
 
 func (r *DataProcessingUnitReconciler) SetupWithManager(mgr ctrl.Manager) error {

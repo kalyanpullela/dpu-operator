@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # NVIDIA Bridge - Port 50051
   opi-nvidia:
-    image: ghcr.io/opiproject/opi-nvidia-bridge:main
+    image: ghcr.io/opiproject/opi-nvidia-bridge:${OPI_BRIDGE_TAG:-main}
     container_name: opi-nvidia-emulator
     ports:
       - "50051:50051"  # gRPC
@@ -28,7 +28,7 @@ services:
 
   # Intel Bridge - Port 50052
   opi-intel:
-    image: ghcr.io/opiproject/opi-intel-bridge:main
+    image: ghcr.io/opiproject/opi-intel-bridge:${OPI_BRIDGE_TAG:-main}
     container_name: opi-intel-emulator
     ports:
       - "50052:50051"  # gRPC (mapped to avoid conflict)
@@ -53,7 +53,7 @@ services:
 
   # SPDK Bridge (Storage Reference) - Port 50053
   opi-spdk:
-    image: ghcr.io/opiproject/opi-spdk-bridge:main
+    image: ghcr.io/opiproject/opi-spdk-bridge:${OPI_BRIDGE_TAG:-main}
     container_name: opi-spdk-emulator
     ports:
       - "50053:50051"  # gRPC
@@ -78,7 +78,7 @@ services:
 
   # Marvell Bridge - Port 50054
   opi-marvell:
-    image: ghcr.io/opiproject/opi-marvell-bridge:main
+    image: ghcr.io/opiproject/opi-marvell-bridge:${OPI_BRIDGE_TAG:-main}
     container_name: opi-marvell-emulator
     ports:
       - "50054:50051"  # gRPC
@@ -103,7 +103,7 @@ services:
 
   # StrongSwan Bridge (Security/IPsec) - Port 50055
   opi-strongswan:
-    image: ghcr.io/opiproject/opi-strongswan-bridge:main
+    image: ghcr.io/opiproject/opi-strongswan-bridge:${OPI_BRIDGE_TAG:-main}
     container_name: opi-strongswan-emulator
     ports:
       - "50055:50051"  # gRPC
@@ -130,9 +130,10 @@ networks:
   opi-network:
     driver: bridge
 
-# Note: If images are not available on ghcr.io, you can build them locally:
-# cd ~/unified-k8s/opi-nvidia-bridge && docker build -t ghcr.io/opiproject/opi-nvidia-bridge:main .
-# cd ~/unified-k8s/opi-intel-bridge && docker build -t ghcr.io/opiproject/opi-intel-bridge:main .
-# cd ~/unified-k8s/opi-spdk-bridge && docker build -t ghcr.io/opiproject/opi-spdk-bridge:main .
-# cd ~/unified-k8s/opi-marvell-bridge && docker build -t ghcr.io/opiproject/opi-marvell-bridge:main .
-# cd ~/unified-k8s/opi-strongswan-bridge && docker build -t ghcr.io/opiproject/opi-strongswan-bridge:main .
+# Note: If images are not available on ghcr.io, you can build them locally and set OPI_BRIDGE_TAG:
+#   export OPI_BRIDGE_TAG=local
+#   cd ~/unified-k8s/opi-nvidia-bridge && docker build -t ghcr.io/opiproject/opi-nvidia-bridge:local .
+#   cd ~/unified-k8s/opi-intel-bridge && docker build -t ghcr.io/opiproject/opi-intel-bridge:local .
+#   cd ~/unified-k8s/opi-spdk-bridge && docker build -t ghcr.io/opiproject/opi-spdk-bridge:local .
+#   cd ~/unified-k8s/opi-marvell-bridge && docker build -t ghcr.io/opiproject/opi-marvell-bridge:local .
+#   cd ~/unified-k8s/opi-strongswan-bridge && docker build -t ghcr.io/opiproject/opi-strongswan-bridge:local .

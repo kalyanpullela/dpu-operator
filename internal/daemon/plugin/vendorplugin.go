@@ -2,8 +2,10 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -11,9 +13,11 @@ import (
 	"github.com/go-logr/logr"
 	nfapi "github.com/openshift/dpu-operator/dpu-api/gen"
 	"github.com/openshift/dpu-operator/internal/utils"
+	pkgplugin "github.com/openshift/dpu-operator/pkg/plugin"
 	opi "github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go"
-	pb "github.com/opiproject/opi-api/v1/gen/go/lifecycle/v1alpha1"
+	pb "github.com/opiproject/opi-api/v1/gen/go/lifecycle"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -48,11 +52,21 @@ type GrpcPlugin struct {
 	pathManager   utils.PathManager
 	initialized   bool
 	initMutex     sync.RWMutex
+
+	registryPlugin      pkgplugin.Plugin
+	registryConfig      pkgplugin.PluginConfig
+	registryInitMutex   sync.Mutex
+	registryInitialized bool
+	registryLastAttempt time.Time
+	registryInitErr     error
 }
 
 func (g *GrpcPlugin) Start(ctx context.Context) (string, int32, error) {
 	start := time.Now()
 	interval := 100 * time.Millisecond
+
+	// Best-effort initialization of registry plugin for hybrid mode.
+	_ = g.ensureRegistryInitialized(ctx)
 
 	for {
 		select {
@@ -96,6 +110,23 @@ func (g *GrpcPlugin) Start(ctx context.Context) (string, int32, error) {
 }
 
 func (g *GrpcPlugin) Close() {
+	if g.registryPlugin != nil {
+		g.registryInitMutex.Lock()
+		initialized := g.registryInitialized
+		g.registryInitMutex.Unlock()
+
+		if initialized {
+			if err := g.registryPlugin.Shutdown(context.Background()); err != nil {
+				g.log.Info("Registry plugin shutdown failed", "error", err)
+			}
+			g.registryInitMutex.Lock()
+			g.registryInitialized = false
+			g.registryInitErr = nil
+			g.registryLastAttempt = time.Time{}
+			g.registryInitMutex.Unlock()
+		}
+	}
+
 	if g.conn != nil {
 		g.conn.Close()
 		g.conn = nil
@@ -110,6 +141,19 @@ func WithPathManager(pathManager utils.PathManager) func(*GrpcPlugin) {
 	return func(d *GrpcPlugin) {
 		d.pathManager = pathManager
 	}
+}
+
+// AttachRegistryPlugin configures a registry plugin for hybrid runtime mode.
+// The registry plugin is used for discovery/VF configuration when available,
+// with safe fallback to the VSP gRPC path.
+func (g *GrpcPlugin) AttachRegistryPlugin(p pkgplugin.Plugin, config pkgplugin.PluginConfig) {
+	g.registryInitMutex.Lock()
+	defer g.registryInitMutex.Unlock()
+	g.registryPlugin = p
+	g.registryConfig = config
+	g.registryInitialized = false
+	g.registryInitErr = nil
+	g.registryLastAttempt = time.Time{}
 }
 
 func NewGrpcPlugin(dpuMode bool, dpuIdentifier DpuIdentifier, client client.Client, opts ...func(*GrpcPlugin)) (*GrpcPlugin, error) {
@@ -128,9 +172,66 @@ func NewGrpcPlugin(dpuMode bool, dpuIdentifier DpuIdentifier, client client.Clie
 	return gp, nil
 }
 
+const registryInitRetryInterval = 30 * time.Second
+
+func (g *GrpcPlugin) ensureRegistryInitialized(ctx context.Context) bool {
+	if g.registryPlugin == nil {
+		return false
+	}
+
+	g.registryInitMutex.Lock()
+	defer g.registryInitMutex.Unlock()
+
+	if g.registryInitialized {
+		return true
+	}
+
+	if !g.registryLastAttempt.IsZero() && time.Since(g.registryLastAttempt) < registryInitRetryInterval {
+		return false
+	}
+	g.registryLastAttempt = time.Now()
+
+	if err := g.registryPlugin.Initialize(ctx, g.registryConfig); err != nil {
+		if errors.Is(err, pkgplugin.ErrAlreadyInitialized) {
+			g.registryInitialized = true
+			g.registryInitErr = nil
+			return true
+		}
+		g.registryInitErr = err
+		g.log.Info("Registry plugin initialization failed; falling back to VSP", "plugin", g.registryPlugin.Info().Name, "error", err)
+		return false
+	}
+
+	g.registryInitialized = true
+	g.registryInitErr = nil
+	g.log.Info("Registry plugin initialized for hybrid runtime", "plugin", g.registryPlugin.Info().Name)
+	return true
+}
+
+func (g *GrpcPlugin) registryNetworkPlugin() (pkgplugin.NetworkPlugin, bool) {
+	if g.registryPlugin == nil {
+		return nil, false
+	}
+	np, ok := g.registryPlugin.(pkgplugin.NetworkPlugin)
+	return np, ok
+}
+
 func (g *GrpcPlugin) ensureConnected() error {
-	if g.client != nil {
-		return nil
+	if g.conn != nil {
+		state := g.conn.GetState()
+		if state == connectivity.Ready || state == connectivity.Idle {
+			if g.client != nil {
+				return nil
+			}
+		} else {
+			g.log.Info("gRPC connection not ready, reconnecting", "state", state)
+			_ = g.conn.Close()
+			g.conn = nil
+			g.client = nil
+			g.nfclient = nil
+			g.opiClient = nil
+			g.dsClient = nil
+		}
 	}
 	dialOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -155,6 +256,25 @@ func (g *GrpcPlugin) ensureConnected() error {
 }
 
 func (g *GrpcPlugin) CreateBridgePort(createRequest *opi.CreateBridgePortRequest) (*opi.BridgePort, error) {
+	if createRequest == nil {
+		return nil, fmt.Errorf("CreateBridgePort request is nil")
+	}
+
+	if g.ensureRegistryInitialized(context.Background()) {
+		if networkPlugin, ok := g.registryNetworkPlugin(); ok {
+			bridgeReq := bridgePortRequestFromOPI(createRequest)
+			port, err := networkPlugin.CreateBridgePort(context.Background(), bridgeReq)
+			if err == nil {
+				return bridgePortToOPI(port, bridgeReq.Name), nil
+			}
+			if pkgplugin.IsNotImplemented(err) || pkgplugin.IsCapabilityNotSupported(err) {
+				g.log.Info("Registry plugin CreateBridgePort not implemented; falling back to VSP", "error", err)
+			} else {
+				return nil, err
+			}
+		}
+	}
+
 	err := g.ensureConnected()
 	if err != nil {
 		return nil, fmt.Errorf("CreateBridgePort failed to ensure GRPC connection: %v", err)
@@ -163,6 +283,24 @@ func (g *GrpcPlugin) CreateBridgePort(createRequest *opi.CreateBridgePortRequest
 }
 
 func (g *GrpcPlugin) DeleteBridgePort(deleteRequest *opi.DeleteBridgePortRequest) error {
+	if deleteRequest == nil {
+		return fmt.Errorf("DeleteBridgePort request is nil")
+	}
+
+	if g.ensureRegistryInitialized(context.Background()) {
+		if networkPlugin, ok := g.registryNetworkPlugin(); ok {
+			err := networkPlugin.DeleteBridgePort(context.Background(), deleteRequest.Name)
+			if err == nil {
+				return nil
+			}
+			if pkgplugin.IsNotImplemented(err) || pkgplugin.IsCapabilityNotSupported(err) {
+				g.log.Info("Registry plugin DeleteBridgePort not implemented; falling back to VSP", "error", err)
+			} else {
+				return err
+			}
+		}
+	}
+
 	err := g.ensureConnected()
 	if err != nil {
 		return fmt.Errorf("DeleteBridgePort failed to ensure GRPC connection: %v", err)
@@ -173,6 +311,19 @@ func (g *GrpcPlugin) DeleteBridgePort(deleteRequest *opi.DeleteBridgePortRequest
 
 func (g *GrpcPlugin) CreateNetworkFunction(input string, output string) error {
 	g.log.Info("CreateNetworkFunction", "input", input, "output", output)
+
+	if g.ensureRegistryInitialized(context.Background()) {
+		if networkPlugin, ok := g.registryNetworkPlugin(); ok {
+			if err := networkPlugin.CreateNetworkFunction(context.Background(), input, output); err == nil {
+				return nil
+			} else if pkgplugin.IsNotImplemented(err) || pkgplugin.IsCapabilityNotSupported(err) {
+				g.log.Info("Registry plugin CreateNetworkFunction not implemented; falling back to VSP", "error", err)
+			} else {
+				return err
+			}
+		}
+	}
+
 	err := g.ensureConnected()
 	if err != nil {
 		return fmt.Errorf("CreateNetworkFunction failed to ensure GRPC connection: %v", err)
@@ -184,6 +335,19 @@ func (g *GrpcPlugin) CreateNetworkFunction(input string, output string) error {
 
 func (g *GrpcPlugin) DeleteNetworkFunction(input string, output string) error {
 	g.log.Info("DeleteNetworkFunction", "input", input, "output", output)
+
+	if g.ensureRegistryInitialized(context.Background()) {
+		if networkPlugin, ok := g.registryNetworkPlugin(); ok {
+			if err := networkPlugin.DeleteNetworkFunction(context.Background(), input, output); err == nil {
+				return nil
+			} else if pkgplugin.IsNotImplemented(err) || pkgplugin.IsCapabilityNotSupported(err) {
+				g.log.Info("Registry plugin DeleteNetworkFunction not implemented; falling back to VSP", "error", err)
+			} else {
+				return err
+			}
+		}
+	}
+
 	err := g.ensureConnected()
 	if err != nil {
 		return fmt.Errorf("DeleteNetworkFunction failed to ensure GRPC connection: %v", err)
@@ -194,6 +358,19 @@ func (g *GrpcPlugin) DeleteNetworkFunction(input string, output string) error {
 }
 
 func (g *GrpcPlugin) GetDevices() (*pb.DeviceListResponse, error) {
+	if g.ensureRegistryInitialized(context.Background()) {
+		devices, err := g.registryPlugin.DiscoverDevices(context.Background())
+		if err == nil && len(devices) > 0 {
+			return devicesToLifecycleResponse(devices), nil
+		}
+		if err != nil && !pkgplugin.IsNotImplemented(err) && !pkgplugin.IsCapabilityNotSupported(err) {
+			g.log.Info("Registry plugin DiscoverDevices failed; falling back to VSP", "error", err)
+		}
+		if err == nil && len(devices) == 0 {
+			g.log.Info("Registry plugin returned no devices; falling back to VSP")
+		}
+	}
+
 	err := g.ensureConnected()
 	if err != nil {
 		return nil, fmt.Errorf("GetDevices failed to ensure GRPC connection: %v", err)
@@ -202,6 +379,28 @@ func (g *GrpcPlugin) GetDevices() (*pb.DeviceListResponse, error) {
 }
 
 func (g *GrpcPlugin) SetNumVfs(count int32) (*pb.VfCount, error) {
+	if g.ensureRegistryInitialized(context.Background()) {
+		if networkPlugin, ok := g.registryNetworkPlugin(); ok {
+			devices, err := g.registryPlugin.DiscoverDevices(context.Background())
+			if err == nil && len(devices) > 0 {
+				// The legacy VSP path applies VF changes at the device level without a specific ID.
+				// For the registry plugin, apply to the first discovered device to preserve behavior.
+				targetID := resolveDeviceID(devices[0])
+				if err := networkPlugin.SetVFCount(context.Background(), targetID, int(count)); err == nil {
+					return &pb.VfCount{VfCnt: count}, nil
+				} else if pkgplugin.IsNotImplemented(err) || pkgplugin.IsCapabilityNotSupported(err) {
+					g.log.Info("Registry plugin SetVFCount not implemented; falling back to VSP", "error", err)
+				} else {
+					return nil, err
+				}
+			} else if err != nil {
+				g.log.Info("Registry plugin DiscoverDevices failed; falling back to VSP", "error", err)
+			} else {
+				g.log.Info("Registry plugin returned no devices; falling back to VSP")
+			}
+		}
+	}
+
 	err := g.ensureConnected()
 	if err != nil {
 		return nil, fmt.Errorf("SetNumvfs failed to ensure GRPC connection: %v", err)
@@ -210,6 +409,122 @@ func (g *GrpcPlugin) SetNumVfs(count int32) (*pb.VfCount, error) {
 		VfCnt: count,
 	}
 	return g.dsClient.SetNumVfs(context.Background(), c)
+}
+
+func resolveDeviceID(device pkgplugin.Device) string {
+	if device.ID != "" {
+		return device.ID
+	}
+	if device.PCIAddress != "" {
+		return device.PCIAddress
+	}
+	if device.PCIID.VendorID != "" || device.PCIID.DeviceID != "" {
+		return device.PCIID.String()
+	}
+	return "unknown"
+}
+
+func bridgePortRequestFromOPI(req *opi.CreateBridgePortRequest) *pkgplugin.BridgePortRequest {
+	if req == nil {
+		return &pkgplugin.BridgePortRequest{}
+	}
+
+	name := req.BridgePortId
+	mac := ""
+	var vlanID *int
+	portType := ""
+	metadata := map[string]string{}
+
+	if req.BridgePort != nil {
+		if req.BridgePort.Name != "" {
+			name = req.BridgePort.Name
+		}
+		if req.BridgePort.Spec != nil {
+			if len(req.BridgePort.Spec.MacAddress) > 0 {
+				mac = net.HardwareAddr(req.BridgePort.Spec.MacAddress).String()
+			}
+			if req.BridgePort.Spec.Ptype != opi.BridgePortType_BRIDGE_PORT_TYPE_UNSPECIFIED {
+				portType = strings.ToLower(req.BridgePort.Spec.Ptype.String())
+			}
+			if len(req.BridgePort.Spec.LogicalBridges) > 0 {
+				metadata["logical_bridges"] = strings.Join(req.BridgePort.Spec.LogicalBridges, ",")
+				if len(req.BridgePort.Spec.LogicalBridges) == 1 {
+					if parsed, err := strconv.Atoi(req.BridgePort.Spec.LogicalBridges[0]); err == nil {
+						vlanID = &parsed
+					}
+				}
+			}
+		}
+	}
+
+	return &pkgplugin.BridgePortRequest{
+		Name:       name,
+		MACAddress: mac,
+		VLANID:     vlanID,
+		Type:       portType,
+		Metadata:   metadata,
+	}
+}
+
+func bridgePortToOPI(port *pkgplugin.BridgePort, fallbackName string) *opi.BridgePort {
+	if port == nil {
+		return &opi.BridgePort{Name: fallbackName}
+	}
+
+	name := port.ID
+	if name == "" {
+		name = port.Name
+	}
+	if name == "" {
+		name = fallbackName
+	}
+
+	spec := &opi.BridgePortSpec{}
+	if port.MACAddress != "" {
+		if parsed, err := net.ParseMAC(port.MACAddress); err == nil {
+			spec.MacAddress = parsed
+		}
+	}
+	if port.VLANID != nil {
+		spec.LogicalBridges = []string{strconv.Itoa(*port.VLANID)}
+	}
+
+	switch strings.ToLower(port.Type) {
+	case "trunk", "bridge_port_type_trunk", "bridge-port-type-trunk":
+		spec.Ptype = opi.BridgePortType_BRIDGE_PORT_TYPE_TRUNK
+	case "access", "bridge_port_type_access", "bridge-port-type-access":
+		spec.Ptype = opi.BridgePortType_BRIDGE_PORT_TYPE_ACCESS
+	default:
+		if spec.Ptype == opi.BridgePortType_BRIDGE_PORT_TYPE_UNSPECIFIED {
+			spec.Ptype = opi.BridgePortType_BRIDGE_PORT_TYPE_ACCESS
+		}
+	}
+
+	return &opi.BridgePort{
+		Name: name,
+		Spec: spec,
+	}
+}
+
+func devicesToLifecycleResponse(devices []pkgplugin.Device) *pb.DeviceListResponse {
+	resp := &pb.DeviceListResponse{
+		Devices: make(map[string]*pb.Device),
+	}
+	for _, dev := range devices {
+		deviceID := resolveDeviceID(dev)
+		health := "unhealthy"
+		if dev.Healthy {
+			health = "healthy"
+		}
+		resp.Devices[deviceID] = &pb.Device{
+			ID:     deviceID,
+			Health: health,
+			Topology: &pb.TopologyInfo{
+				Node: dev.PCIAddress,
+			},
+		}
+	}
+	return resp
 }
 
 // IsInitialized returns true if the VSP has been successfully initialized

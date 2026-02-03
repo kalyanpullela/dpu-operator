@@ -80,6 +80,10 @@ spec:
           value: quay.io/openshift/dpu-daemon:latest
         - name: NRIWebhookImage
           value: quay.io/openshift/dpu-network-resources-injector:latest
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         - name: intel_ipu
           value: quay.io/openshift/dpu-intel-ipu-vsp:latest
         - name: IntelVspP4Image
@@ -90,6 +94,12 @@ spec:
           value: quay.io/openshift/dpu-marvell-cp-agent:latest
         - name: intel_netsec
           value: quay.io/openshift/dpu-intel-netsec-vsp:latest
+        - name: nvidia_bf
+          value: quay.io/openshift/dpu-nvidia-bf-vsp:latest
+        - name: xsight
+          value: quay.io/openshift/dpu-xsight-vsp:latest
+        - name: mangoboost
+          value: quay.io/openshift/dpu-mangoboost-vsp:latest
         image: quay.io/openshift/dpu-operator:latest
         name: manager
         securityContext:

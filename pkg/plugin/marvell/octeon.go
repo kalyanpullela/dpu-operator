@@ -81,9 +81,7 @@ func (p *OcteonPlugin) Info() plugin.PluginInfo {
 		Version:          PluginVersion,
 		Description:      "Marvell Octeon DPU plugin supporting Octeon 10 hardware",
 		SupportedDevices: supportedDevices,
-		Capabilities: []plugin.Capability{
-			plugin.CapabilityNetworking,
-		},
+		Capabilities:     []plugin.Capability{},
 	}
 }
 
@@ -293,17 +291,8 @@ func (p *OcteonPlugin) CreateBridgePort(ctx context.Context, request *plugin.Bri
 		return nil, plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Creating bridge port", "name", request.Name, "mac", request.MACAddress)
-
-	port := &plugin.BridgePort{
-		ID:         fmt.Sprintf("bp-%s", request.Name),
-		Name:       request.Name,
-		MACAddress: request.MACAddress,
-		VLANID:     request.VLANID,
-		Status:     "Active",
-	}
-
-	return port, nil
+	p.log.Info("CreateBridgePort not implemented for Marvell Octeon plugin", "name", request.Name)
+	return nil, plugin.ErrNotImplemented
 }
 
 // DeleteBridgePort removes a bridge port.
@@ -315,8 +304,8 @@ func (p *OcteonPlugin) DeleteBridgePort(ctx context.Context, portID string) erro
 		return plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Deleting bridge port", "portID", portID)
-	return nil
+	p.log.Info("DeleteBridgePort not implemented for Marvell Octeon plugin", "portID", portID)
+	return plugin.ErrNotImplemented
 }
 
 // GetBridgePort retrieves information about a bridge port.
@@ -352,8 +341,8 @@ func (p *OcteonPlugin) SetVFCount(ctx context.Context, deviceID string, count in
 		return plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Setting VF count", "deviceID", deviceID, "count", count)
-	return nil
+	p.log.Info("SetVFCount not implemented for Marvell Octeon plugin", "deviceID", deviceID, "count", count)
+	return plugin.ErrNotImplemented
 }
 
 // GetVFCount returns the current number of virtual functions.
@@ -365,7 +354,7 @@ func (p *OcteonPlugin) GetVFCount(ctx context.Context, deviceID string) (int, er
 		return 0, plugin.ErrNotInitialized
 	}
 
-	return 0, nil
+	return 0, plugin.ErrNotImplemented
 }
 
 // CreateNetworkFunction sets up a network function between input and output ports.
@@ -377,8 +366,8 @@ func (p *OcteonPlugin) CreateNetworkFunction(ctx context.Context, input, output 
 		return plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Creating network function", "input", input, "output", output)
-	return nil
+	p.log.Info("CreateNetworkFunction not implemented for Marvell Octeon plugin", "input", input, "output", output)
+	return plugin.ErrNotImplemented
 }
 
 // DeleteNetworkFunction removes a network function.
@@ -390,8 +379,8 @@ func (p *OcteonPlugin) DeleteNetworkFunction(ctx context.Context, input, output 
 		return plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Deleting network function", "input", input, "output", output)
-	return nil
+	p.log.Info("DeleteNetworkFunction not implemented for Marvell Octeon plugin", "input", input, "output", output)
+	return plugin.ErrNotImplemented
 }
 
 // Ensure OcteonPlugin implements the required interfaces.

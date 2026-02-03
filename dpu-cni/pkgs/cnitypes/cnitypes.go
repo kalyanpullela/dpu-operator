@@ -2,6 +2,9 @@ package cnitypes
 
 import (
 	"context"
+	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/containernetworking/cni/pkg/types"
@@ -72,6 +75,15 @@ type PodRequest struct {
 	DeviceInfo nadapi.DeviceInfo
 }
 
+type DeviceIDType string
+
+const (
+	DeviceIDTypeUnknown DeviceIDType = "unknown"
+	DeviceIDTypePCI     DeviceIDType = "pci"
+	DeviceIDTypeNetdev  DeviceIDType = "netdev"
+	DeviceIDTypeAux     DeviceIDType = "aux"
+)
+
 // FIXME: This file is copied from sriov-cni intentionally. We plan to trim this down once
 // we know what we want to support from SR-IOV.
 
@@ -121,6 +133,7 @@ type NetConf struct {
 	VlanQoS       *int    `json:"vlanQoS"`
 	VlanProto     *string `json:"vlanProto"` // 802.1ad|802.1q
 	DeviceID      string  `json:"deviceID"`  // PCI address of a VF in valid sysfs format
+	DeviceIDType  DeviceIDType `json:"-"`
 	VFID          int
 	MinTxRate     *int   `json:"min_tx_rate"`          // Mbps, 0 = disable rate limiting
 	MaxTxRate     *int   `json:"max_tx_rate"`          // Mbps, 0 = disable rate limiting
@@ -132,4 +145,35 @@ type NetConf struct {
 	} `json:"runtimeConfig,omitempty"`
 	LogLevel string `json:"logLevel,omitempty"`
 	LogFile  string `json:"logFile,omitempty"`
+}
+
+var (
+	pciAddressPattern     = regexp.MustCompile(`(?i)^([0-9a-f]{4})[:\-]([0-9a-f]{2})[:\-]([0-9a-f]{2})[.\-]([0-7])$`)
+	shortPciAddressPattern = regexp.MustCompile(`(?i)^([0-9a-f]{2})[:\-]([0-9a-f]{2})[.\-]([0-7])$`)
+	auxDevicePattern      = regexp.MustCompile(`^[^.]+\\.[^.]+\\.[^.]+$`)
+)
+
+// NormalizeDeviceID normalizes the device ID and determines its type.
+func NormalizeDeviceID(raw string) (string, DeviceIDType, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", DeviceIDTypeUnknown, nil
+	}
+
+	if matches := pciAddressPattern.FindStringSubmatch(trimmed); len(matches) == 5 {
+		return fmt.Sprintf("%s:%s:%s.%s", strings.ToLower(matches[1]), strings.ToLower(matches[2]), strings.ToLower(matches[3]), strings.ToLower(matches[4])), DeviceIDTypePCI, nil
+	}
+	if matches := shortPciAddressPattern.FindStringSubmatch(trimmed); len(matches) == 4 {
+		return fmt.Sprintf("0000:%s:%s.%s", strings.ToLower(matches[1]), strings.ToLower(matches[2]), strings.ToLower(matches[3])), DeviceIDTypePCI, nil
+	}
+
+	if strings.Contains(trimmed, ":") {
+		return "", DeviceIDTypeUnknown, fmt.Errorf("unrecognized PCI address format: %s", trimmed)
+	}
+
+	if auxDevicePattern.MatchString(trimmed) {
+		return trimmed, DeviceIDTypeAux, nil
+	}
+
+	return trimmed, DeviceIDTypeNetdev, nil
 }

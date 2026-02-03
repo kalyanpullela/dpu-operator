@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	evpnpb "github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go"
-	lifecyclepb "github.com/opiproject/opi-api/v1/gen/go/lifecycle/v1alpha1"
+	lifecyclepb "github.com/opiproject/opi-api/v1/gen/go/lifecycle"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"

@@ -19,7 +19,7 @@ import (
 	"github.com/openshift/dpu-operator/internal/platform"
 	"github.com/openshift/dpu-operator/internal/utils"
 	opi "github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go"
-	pb "github.com/opiproject/opi-api/v1/gen/go/lifecycle/v1alpha1"
+	pb "github.com/opiproject/opi-api/v1/gen/go/lifecycle"
 	"github.com/spf13/afero"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap/zapcore"

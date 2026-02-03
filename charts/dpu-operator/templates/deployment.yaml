@@ -53,6 +53,11 @@ spec:
         - --leader-elect-renew-deadline={{ .Values.operator.leaderElection.renewDeadline }}
         - --leader-elect-retry-period={{ .Values.operator.leaderElection.retryPeriod }}
         {{- end }}
+        {{- if .Values.metrics.enabled }}
+        - --metrics-bind-address=:{{ .Values.metrics.port }}
+        {{- else }}
+        - --metrics-bind-address=0
+        {{- end }}
         - --zap-log-level={{ .Values.operator.logLevel }}
         {{- with .Values.securityContext }}
         securityContext:

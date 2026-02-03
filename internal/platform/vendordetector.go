@@ -3,6 +3,8 @@ package platform
 import (
 	stderrors "errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jaypipes/ghw"
@@ -10,14 +12,16 @@ import (
 	"github.com/openshift/dpu-operator/internal/daemon/plugin"
 	"github.com/openshift/dpu-operator/internal/images"
 	"github.com/openshift/dpu-operator/internal/utils"
+	pkgplugin "github.com/openshift/dpu-operator/pkg/plugin"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kind/pkg/errors"
 )
 
 type DpuDetectorManager struct {
-	platform  Platform
-	detectors []VendorDetector
+	platform       Platform
+	detectors      []VendorDetector
+	pluginRegistry *pkgplugin.Registry
 }
 
 type VendorDetector interface {
@@ -59,6 +63,33 @@ func SanitizeForTemplate(name string) string {
 	return strings.ReplaceAll(name, "-", "_")
 }
 
+// SanitizeForK8sName normalizes strings for use in Kubernetes resource names.
+// It lowercases and replaces unsupported characters with "-".
+func SanitizeForK8sName(name string) string {
+	if name == "" {
+		return "unknown"
+	}
+	var b strings.Builder
+	b.Grow(len(name))
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-.")
+	if out == "" {
+		return "unknown"
+	}
+	return out
+}
+
 func NewDpuDetectorManager(platform Platform) *DpuDetectorManager {
 	return &DpuDetectorManager{
 		platform: platform,
@@ -71,6 +102,7 @@ func NewDpuDetectorManager(platform Platform) *DpuDetectorManager {
 			NewMangoBoostDetector(),
 			// add more detectors here
 		},
+		pluginRegistry: pkgplugin.DefaultRegistry(),
 	}
 }
 
@@ -78,6 +110,16 @@ func (d *DpuDetectorManager) GetVendorDirectory(dpuProductName string) (string, 
 	for _, detector := range d.detectors {
 		if detector.Name() == dpuProductName {
 			return detector.DpuPlatformName(), nil
+		}
+	}
+	return "", fmt.Errorf("unknown DPU product name: %s", dpuProductName)
+}
+
+// GetVendorNameByProductName returns the vendor name for a given DPU product name.
+func (d *DpuDetectorManager) GetVendorNameByProductName(dpuProductName string) (string, error) {
+	for _, detector := range d.detectors {
+		if detector.Name() == dpuProductName {
+			return detector.GetVendorName(), nil
 		}
 	}
 	return "", fmt.Errorf("unknown DPU product name: %s", dpuProductName)
@@ -100,6 +142,14 @@ func (pi *DpuDetectorManager) postFixDpuSideToIdentifier(identifier plugin.DpuId
 		postfix = "-host"
 	}
 	return plugin.DpuIdentifier(string(identifier) + postfix)
+}
+
+func (pi *DpuDetectorManager) uniqueIdentifierForNode(identifier plugin.DpuIdentifier, nodeName string) plugin.DpuIdentifier {
+	if nodeName == "" {
+		return identifier
+	}
+	suffix := SanitizeForK8sName(nodeName)
+	return plugin.DpuIdentifier(fmt.Sprintf("%s-%s", identifier, suffix))
 }
 
 func (pi *DpuDetectorManager) detectDpuPlatform(required bool) (VendorDetector, error) {
@@ -155,10 +205,12 @@ func (d *DpuDetectorManager) DetectAll(imageManager images.ImageManager, client 
 			if err != nil {
 				return nil, err
 			}
+			d.attachRegistryPlugin(detector, vsp)
 
+			uniqueIdentifier := d.uniqueIdentifierForNode(identifier, nodeName)
 			dpuCR := &v1.DataProcessingUnit{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: string(d.postFixDpuSideToIdentifier(identifier, isDpuSide)),
+					Name: string(d.postFixDpuSideToIdentifier(uniqueIdentifier, isDpuSide)),
 				},
 				Spec: v1.DataProcessingUnitSpec{
 					DpuProductName: detector.Name(),
@@ -208,10 +260,12 @@ func (d *DpuDetectorManager) DetectAll(imageManager images.ImageManager, client 
 				if err != nil {
 					return nil, err
 				}
+				d.attachRegistryPlugin(detector, vsp)
 
+				uniqueIdentifier := d.uniqueIdentifierForNode(identifier, nodeName)
 				dpuCR := &v1.DataProcessingUnit{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: string(d.postFixDpuSideToIdentifier(identifier, isDpuSide)),
+						Name: string(d.postFixDpuSideToIdentifier(uniqueIdentifier, isDpuSide)),
 					},
 					Spec: v1.DataProcessingUnitSpec{
 						DpuProductName: detector.Name(),
@@ -238,4 +292,52 @@ func (d *DpuDetectorManager) DetectAll(imageManager images.ImageManager, client 
 		}
 	}
 	return detectedDpus, nil
+}
+
+func (d *DpuDetectorManager) attachRegistryPlugin(detector VendorDetector, vsp *plugin.GrpcPlugin) {
+	if vsp == nil || d.pluginRegistry == nil || detector == nil {
+		return
+	}
+	vendor := detector.GetVendorName()
+	if vendor == "" {
+		return
+	}
+	registryPlugin := d.findRegistryPluginByVendor(vendor)
+	if registryPlugin == nil {
+		return
+	}
+	vsp.AttachRegistryPlugin(registryPlugin, pluginConfigFromEnv(vendor))
+}
+
+func (d *DpuDetectorManager) findRegistryPluginByVendor(vendor string) pkgplugin.Plugin {
+	for _, p := range d.pluginRegistry.List() {
+		info := p.Info()
+		if strings.EqualFold(info.Vendor, vendor) || strings.EqualFold(info.Name, vendor) {
+			return p
+		}
+	}
+	return nil
+}
+
+func pluginConfigFromEnv(vendor string) pkgplugin.PluginConfig {
+	endpoint := os.Getenv("DPU_PLUGIN_OPI_ENDPOINT")
+
+	if vendor != "" {
+		key := "DPU_PLUGIN_OPI_ENDPOINT_" + strings.ToUpper(strings.ReplaceAll(vendor, "-", "_"))
+		if value := os.Getenv(key); value != "" {
+			endpoint = value
+		}
+	}
+
+	logLevel := 0
+	if raw := os.Getenv("DPU_PLUGIN_LOG_LEVEL"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			logLevel = parsed
+		}
+	}
+
+	return pkgplugin.PluginConfig{
+		OPIEndpoint: endpoint,
+		LogLevel:    logLevel,
+	}
 }

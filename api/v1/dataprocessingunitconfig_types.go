@@ -33,14 +33,24 @@ type DataProcessingUnitConfigSpec struct {
 	// +optional
 	DpuSelector *metav1.LabelSelector `json:"dpuSelector,omitempty"`
 
-	// Foo is an example field of DataProcessingUnitConfig. Edit dataprocessingunitconfig_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// VfCount sets the desired number of VFs for matched DPUs.
+	// If omitted, no VF configuration is applied.
+	// +optional
+	VfCount *int32 `json:"vfCount,omitempty"`
 }
 
 // DataProcessingUnitConfigStatus defines the observed state of DataProcessingUnitConfig.
 type DataProcessingUnitConfigStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// ObservedGeneration is the last observed generation of the config.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// MatchedDPUs lists DPU names that currently match the selector.
+	// +optional
+	MatchedDPUs []string `json:"matchedDPUs,omitempty"`
 }
 
 // +kubebuilder:object:root=true

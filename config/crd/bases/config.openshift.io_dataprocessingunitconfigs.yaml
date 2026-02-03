@@ -91,14 +91,28 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
-              foo:
-                description: Foo is an example field of DataProcessingUnitConfig.
-                  Edit dataprocessingunitconfig_types.go to remove/update
-                type: string
+              vfCount:
+                description: |-
+                  VfCount sets the desired number of VFs for matched DPUs.
+                  If omitted, no VF configuration is applied.
+                format: int32
+                type: integer
             type: object
           status:
             description: DataProcessingUnitConfigStatus defines the observed state
               of DataProcessingUnitConfig.
+            properties:
+              matchedDPUs:
+                description: MatchedDPUs lists DPU names that currently match the
+                  selector.
+                items:
+                  type: string
+                type: array
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation of
+                  the config.
+                format: int64
+                type: integer
             type: object
         type: object
     served: true

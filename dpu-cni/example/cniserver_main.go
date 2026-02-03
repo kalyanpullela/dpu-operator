@@ -11,10 +11,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// This server implementations is only temporary for testing when the DPU Daemon
-// code has not been implemented.
-
-// FIXME: This will disappear in the near future
+// This example server is intended for local testing only.
+// Production deployments run the CNI server under the DPU daemon.
 func cniCmdNfAddHandler(req *cnitypes.PodRequest) (*cni100.Result, error) {
 	klog.Info("cniCmdNfAddHandler")
 	res, err := networkfn.CmdAdd(req)

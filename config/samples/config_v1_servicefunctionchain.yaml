@@ -16,3 +16,9 @@ spec:
   networkFunctions:
     - name: firewall
       image: nginx:latest
+      networks:
+        - dpunfcni-conf
+        - dpunfcni-conf
+      dpuResources:
+        requests: 2
+        limits: 2

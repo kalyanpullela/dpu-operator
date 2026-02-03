@@ -6,4 +6,9 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: dataprocessingunitconfig-sample
 spec:
-  # TODO(user): Add fields here
+  # Apply this config to all DPUs with label dpu=enabled
+  dpuSelector:
+    matchLabels:
+      dpu: "enabled"
+  # Desired VF count for matched DPUs
+  vfCount: 8

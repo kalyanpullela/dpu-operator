@@ -10,11 +10,11 @@ This operator will manage and configure data processing unit (DPUs) to be used i
 The operator uses a unified plugin architecture (`pkg/plugin`) to support multiple hardware vendors through a common interface. This architecture abstracts vendor-specific details and leverages OPI (Open Programmable Infrastructure) APIs where possible.
 
 **Supported Vendors:**
-*   **NVIDIA**: BlueField-2/3 support via OPI Bridge (fully integrated)
-*   **Intel**: IPU support (structure available)
-*   **Marvell**: Octeon support (structure available)
-*   **MangoBoost**: Support structure available
-*   **xSight**: Support structure available
+*   **NVIDIA**: BlueField-2/3 networking via OPI bridge (storage/security planned)
+*   **Intel**: IPU E2100 and NetSec Accelerator support via VSP
+*   **Marvell**: Octeon 10 support via VSP
+*   **MangoBoost**: Experimental discovery/inventory only
+*   **xSight**: Experimental discovery/inventory only (placeholder PCI IDs)
 
 ## Getting Started
 
@@ -124,7 +124,7 @@ kubectl create -f examples/config.yaml
 
 After creating the `DpuOperatorConfig` CR, you should see the following pods:
 ```sh
-oc get pods -n openshift-dpu-operator -o wide
+oc get pods -n <operator-namespace> -o wide
 NAME                                              READY   STATUS    RESTARTS   AGE   IP                NODE             NOMINATED NODE   READINESS GATES
 dpu-daemon-rn6mc                                  1/1     Running   0          22h   192.168.122.218   worker-229       <none>           <none>
 dpu-daemon-xrrlg                                  1/1     Running   0          22h   192.168.122.90    worker-229-ptl   <none>           <none>
@@ -134,6 +134,10 @@ vsp-rdbk6                                         1/1     Running   0          2
 vsp-x4bdh                                         1/1     Running   0          22h   192.168.122.90    worker-229-ptl   <none>           <none>
 
 ```
+
+For source installs, `config/default` deploys into `openshift-dpu-operator` by default. The lower-level
+`config/manager/` base deploys into `system` unless overridden. The operator reads `POD_NAMESPACE` to
+decide where to render namespaced resources.
 
 This can be undone by deleting the top level operator config CR:
 
@@ -160,6 +164,14 @@ kubectl create -f examples/config.yaml
 # Create pods and/or ServiceFunctionChain yaml
 kubectl create -f examples/my-pod.yaml
 ```
+
+### Local OPI API & Bridge Development
+
+- The operator now uses the in-repo `../opi-api` module by default via `replace` in `dpu-operator/go.mod`.
+  If you want to use an external fork, adjust that `replace` accordingly.
+- To test local `opi-api` changes, regenerate Go stubs in `opi-api/` and rebuild the operator images.
+- To test local OPI bridge changes with the emulator, build images from `opi-*-bridge/` and set
+  `OPI_BRIDGE_TAG` before running `test/emulation/docker-compose.yml`.
 
 ### Network Functions
 

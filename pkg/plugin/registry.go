@@ -73,20 +73,21 @@ func (r *Registry) Register(p Plugin) error {
 		return fmt.Errorf("plugin %q already registered", info.Name)
 	}
 
+	// Validate device IDs before registering the plugin to avoid ambiguous mapping.
+	for _, device := range info.SupportedDevices {
+		deviceKey := strings.ToLower(device.String())
+		if existingPlugin, exists := r.deviceIndex[deviceKey]; exists {
+			return fmt.Errorf("device %s already claimed by plugin %s", deviceKey, existingPlugin)
+		}
+	}
+
 	// Register the plugin
 	r.plugins[info.Name] = p
 
 	// Build device index for fast lookup
 	for _, device := range info.SupportedDevices {
 		deviceKey := strings.ToLower(device.String())
-		if existingPlugin, exists := r.deviceIndex[deviceKey]; exists {
-			// Multiple plugins support the same device - log warning but allow
-			// The first registered plugin takes precedence
-			fmt.Printf("WARNING: Device %s already claimed by plugin %s, ignoring registration by plugin %s\n",
-				deviceKey, existingPlugin, info.Name)
-		} else {
-			r.deviceIndex[deviceKey] = info.Name
-		}
+		r.deviceIndex[deviceKey] = info.Name
 	}
 
 	return nil

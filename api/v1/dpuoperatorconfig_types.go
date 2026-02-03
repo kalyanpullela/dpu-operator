@@ -17,6 +17,8 @@ limitations under the License.
 package v1
 
 import (
+	"os"
+
 	"github.com/openshift/dpu-operator/pkgs/vars"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -65,6 +67,11 @@ type DpuOperatorConfigList struct {
 
 func init() {
 	SchemeBuilder.Register(&DpuOperatorConfig{}, &DpuOperatorConfigList{})
+
+	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
+		vars.Namespace = ns
+		DpuOperatorConfigNamespacedName.Namespace = ns
+	}
 }
 
 var DpuOperatorConfigNamespacedName = types.NamespacedName{

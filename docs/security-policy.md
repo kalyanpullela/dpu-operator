@@ -4,17 +4,27 @@ This document describes the security posture and best practices for the DPU Oper
 
 ## Pod Security Standards
 
-The DPU Operator complies with Kubernetes **Pod Security Standards (PSS)** at the **Restricted** level, the most stringent security profile.
+The DPU Operator uses a **mixed** Pod Security Standards model:
+
+- The controller manager can run at **Restricted** level.
+- The daemon and VSP pods require **Privileged** access (hostNetwork/hostPID, device access).
+
+**Note:** The example manifest in `config/security/pod-security-standards.yaml` targets the
+`openshift-dpu-operator` namespace. If you deploy via Helm (often `dpu-operator-system`),
+adjust the namespace accordingly.
 
 ### Security Contexts
 
-All operator pods run with:
+The controller manager pods run with:
 
 - **Non-root user**: `runAsUser: 65532` (nobody)
 - **No privilege escalation**: `allowPrivilegeEscalation: false`
 - **Dropped capabilities**: All Linux capabilities dropped
 - **Read-only root filesystem**: `readOnlyRootFilesystem: true`
 - **Seccomp profile**: `RuntimeDefault`
+
+The daemon and VSP pods run privileged to access host devices and networking
+and therefore do not meet the Restricted profile.
 
 ### Network Policies
 
@@ -24,7 +34,7 @@ The operator deploys with **deny-all-by-default** network policies:
 |--------|---------|
 | `deny-all-default` | Blocks all ingress and egress by default |
 | `operator-egress` | Allows only necessary outbound connections (K8s API, DNS, OPI bridges) |
-| `allow-metrics-scraping` | Permits Prometheus to scrape metrics on port 8080 |
+| `allow-metrics-scraping` | Permits Prometheus to scrape metrics on port 10443 |
 | `allow-webhook-traffic` | Enables admission webhooks on port 9443 |
 
 ### Resource Limits
@@ -38,25 +48,27 @@ Resource quotas prevent resource exhaustion attacks:
 
 ## RBAC (Role-Based Access Control)
 
-The operator uses **least-privilege RBAC**:
+The operator uses **scoped RBAC**, but some core resources require broad verbs
+to support privileged daemon/VSP workflows.
 
 ### Cluster-Wide Permissions
 
 - **Full control**: DPU CRDs only (`dpus`, `dpuconfigs`, etc.)
-- **Read-only**: Nodes, pods, services (for discovery)
-- **Limited write**: DaemonSets, ConfigMaps (for managed workloads)
+- **Broad verbs**: Core resources like pods/services are required for VSP and daemon management
+- **Managed workloads**: DaemonSets, Deployments, RBAC objects
 
 ### Namespace Permissions
 
-- **Full control**: Resources in `dpu-operator-system` namespace only
+- **Full control**: Resources in the operator namespace only (defaults to `openshift-dpu-operator` for
+  `config/default` and OLM installs, and `system` for the lower-level `config/manager/` base)
 - **No cluster-admin**: Operator never requires cluster-admin role
 
 ## Secrets and Credentials
 
 ### OPI Bridge Authentication
 
-- OPI bridges use **mTLS** when TLS is enabled
-- Certificates managed by **cert-manager**
+- OPI gRPC connections are **plaintext by default** today
+- TLS/mTLS support is planned and should be enabled when implemented
 - No hardcoded credentials or API keys
 
 ### Image Pull Secrets
@@ -111,7 +123,7 @@ The operator is designed to support:
 
 ### In-Scope Threats
 
-1. **Privilege escalation**: Prevented by PSS Restricted + read-only filesystem
+1. **Privilege escalation**: Controller manager is restricted; daemon/VSP require privileged access
 2. **Resource exhaustion**: Mitigated by ResourceQuota and LimitRange
 3. **Network exfiltration**: Prevented by default-deny NetworkPolicies
 4. **Supply chain attacks**: Addressed by image signing and SBOM
@@ -144,7 +156,7 @@ Include:
 
 ### Deployment
 
-1. **Always use TLS** for OPI bridge connections
+1. **Use TLS** for OPI bridge connections when supported
 2. **Enable NetworkPolicies** in production
 3. **Set resource limits** on all pods
 4. **Use dedicated namespace** for operator
@@ -168,12 +180,12 @@ For nodes with DPU hardware:
 
 ## Security Hardening Checklist
 
-- [ ] Pod Security Standards enforced at Restricted level
+- [ ] Pod Security Standards enforced (Restricted for controller, Privileged for daemon/VSP)
 - [ ] NetworkPolicies enabled with deny-all default
 - [ ] ResourceQuota and LimitRange configured
-- [ ] TLS enabled for all OPI connections
+- [ ] TLS/mTLS enabled for OPI connections (when supported)
 - [ ] Image pull from trusted registries only
-- [ ] RBAC follows least-privilege principle
+- [ ] RBAC scoped appropriately for privileged workflows
 - [ ] Secrets stored in encrypted backend (etcd encryption at rest)
 - [ ] Audit logging enabled
 - [ ] Security scanning in CI/CD pipeline

@@ -48,5 +48,15 @@ func ReadCNIConfig(bytes []byte) (*cnitypes.NetConf, error) {
 			return nil, err
 		}
 	}
+
+	if conf.DeviceID != "" {
+		normalized, deviceType, err := cnitypes.NormalizeDeviceID(conf.DeviceID)
+		if err != nil {
+			return nil, err
+		}
+		conf.DeviceID = normalized
+		conf.DeviceIDType = deviceType
+	}
+
 	return conf, nil
 }

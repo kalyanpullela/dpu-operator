@@ -21,7 +21,6 @@ require (
 	github.com/openshift/dpu-operator/api v0.0.0-20250219232844-d9d4ba9f399c
 	github.com/openshift/dpu-operator/dpu-api v0.0.0-20241023094403-a185e0f16e84
 	github.com/opiproject/opi-api v0.0.0-20251222163009-3317b3692163
-	github.com/opiproject/opi-api/v1/gen/go/lifecycle v0.0.0-20251222163009-3317b3692163
 	github.com/spf13/afero v1.12.0
 	github.com/urfave/cli/v2 v2.27.1
 	github.com/vishvananda/netlink v1.3.1
@@ -256,7 +255,5 @@ replace (
 	github.com/intel/ipu-opi-plugins/ipu-plugin => github.com/bn222/ipu-opi-plugins/ipu-plugin v0.0.0-20251225100833-c43f4c250f56
 	github.com/openshift/dpu-operator/api => ./api
 	github.com/openshift/dpu-operator/dpu-api => ./dpu-api
-	github.com/opiproject/opi-api => github.com/bn222/opi-api v0.0.0-20251222163009-3317b3692163
-	github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go => github.com/bn222/opi-api/network/evpn-gw/v1alpha1/gen/go v0.0.0-20251222163009-3317b3692163
-	github.com/opiproject/opi-api/v1/gen/go/lifecycle => github.com/bn222/opi-api/v1/gen/go/lifecycle v0.0.0-20251222163009-3317b3692163
+	github.com/opiproject/opi-api => ../opi-api
 )

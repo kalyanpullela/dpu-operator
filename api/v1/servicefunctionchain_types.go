@@ -36,6 +36,27 @@ type ServiceFunctionChainSpec struct {
 type NetworkFunction struct {
 	Name  string `json:"name"`
 	Image string `json:"image"`
+
+	// Networks is the list of NetworkAttachmentDefinitions to attach (Multus).
+	// If empty, the default DPU NF networks are used.
+	// +optional
+	Networks []string `json:"networks,omitempty"`
+
+	// DpuResources specifies DPU resource requests/limits for the function.
+	// If omitted, defaults are applied by the controller.
+	// +optional
+	DpuResources *DpuResourceRequirements `json:"dpuResources,omitempty"`
+}
+
+// DpuResourceRequirements specifies DPU resource requests and limits.
+type DpuResourceRequirements struct {
+	// Requests is the number of DPUs requested.
+	// +optional
+	Requests int32 `json:"requests,omitempty"`
+
+	// Limits is the number of DPUs limited.
+	// +optional
+	Limits int32 `json:"limits,omitempty"`
 }
 
 //+kubebuilder:object:root=true

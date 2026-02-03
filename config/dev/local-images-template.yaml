@@ -20,6 +20,10 @@ spec:
         env:
         - name: DpuOperatorDaemonImage
           value: {{ .RegistryURL }}/dpu-daemon:dev
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         - name: intel_ipu
           value: {{ .RegistryURL }}/intel-vsp:dev
         - name: IntelVspP4Image
@@ -30,6 +34,12 @@ spec:
           value: {{ .RegistryURL }}/mrvl-cpagent:dev
         - name: intel_netsec
           value: {{ .RegistryURL }}/intel-netsec-vsp:dev
+        - name: nvidia_bf
+          value: {{ .RegistryURL }}/nvidia-bf-vsp:dev
+        - name: xsight
+          value: {{ .RegistryURL }}/xsight-vsp:dev
+        - name: mangoboost
+          value: {{ .RegistryURL }}/mangoboost-vsp:dev
         - name: IMAGE_PULL_POLICIES
           value: Always
         - name: NRIWebhookImage

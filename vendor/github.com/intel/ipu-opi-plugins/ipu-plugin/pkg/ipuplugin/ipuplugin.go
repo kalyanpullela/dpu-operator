@@ -24,7 +24,7 @@ import (
 	"github.com/intel/ipu-opi-plugins/ipu-plugin/pkg/utils"
 	nfapi "github.com/openshift/dpu-operator/dpu-api/gen"
 	pb "github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go"
-	lifecycle "github.com/opiproject/opi-api/v1/gen/go/lifecycle/v1alpha1"
+	lifecycle "github.com/opiproject/opi-api/v1/gen/go/lifecycle"
 	p4_v1 "github.com/p4lang/p4runtime/go/p4/v1"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"

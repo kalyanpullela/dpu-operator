@@ -87,7 +87,7 @@ The following table lists the configurable parameters and their default values.
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `metrics.enabled` | Enable metrics endpoint | `true` |
-| `metrics.port` | Metrics port | `8080` |
+| `metrics.port` | Metrics port | `10443` |
 | `metrics.serviceMonitor.enabled` | Create Prometheus ServiceMonitor | `true` |
 | `metrics.serviceMonitor.interval` | Scrape interval | `30s` |
 

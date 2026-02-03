@@ -100,7 +100,7 @@ Registered plugin: mangoboost (MangoBoost)
 
 **Talking Points:**
 - "5 vendor plugins auto-register at startup"
-- "Each declares capabilities: networking, storage, security"
+- "Capabilities vary by vendor; networking is implemented for NVIDIA first"
 - "Completely vendor-agnostic architecture"
 
 **Show capability details:**
@@ -143,19 +143,18 @@ go test -tags=emulation ./test/emulation/... -v
 
 === RUN   TestIntelPlugin_WithOPIBridge
     ✓ Health check passed
-    ✓ Created bridge port: test-port-intel
-    ✓ Deleted bridge port
+    CreateBridgePort failed (may not be fully implemented): not implemented
 --- PASS: TestIntelPlugin_WithOPIBridge
 
-All 5/5 OPI bridges available
+Total available bridges: 5/5
 PASS
 ```
 
 **Talking Points:**
 - "Tests run against actual OPI bridge implementations"
 - "Same gRPC APIs used with real hardware"
-- "All plugins successfully connect to bridges"
-- "Network operations validated (create/delete ports)"
+- "NVIDIA/Intel/Marvell plugins connect to their bridges"
+- "Network operations validated where implemented (NVIDIA)"
 
 **Show live gRPC traffic:**
 
@@ -378,7 +377,7 @@ kubectl apply -f config/security/pod-security-standards.yaml --dry-run=client -o
 ```
 
 **Talking Points:**
-- "Pod Security Standards: Restricted level"
+- "Pod Security Standards: Privileged for daemon/VSP; Restricted for controller"
 - "Non-root user (UID 65532)"
 - "No capabilities, read-only filesystem"
 - "Default-deny network policies"
@@ -534,10 +533,9 @@ head -30 docs/user-guide.md
 ```
 
 **Talking Points:**
-- "4 comprehensive guides"
+- "3 comprehensive guides"
 - "User guide: installation and configuration"
 - "Plugin developer guide: add new vendors"
-- "Migration guide: v1 to v2 upgrade"
 - "Security policy: compliance and best practices"
 
 ---
@@ -562,12 +560,12 @@ kind delete cluster --name dpu-demo 2>/dev/null || true
 
 | Metric | Value |
 |--------|-------|
-| **Vendors Supported** | 5 (NVIDIA, Intel, Marvell, xSight, MangoBoost) |
+| **Vendors Registered** | 5 (NVIDIA, Intel, Marvell, xSight, MangoBoost) |
 | **Tests Passing** | 100% (unit, integration, emulation) |
 | **Custom Metrics** | 12 Prometheus metrics |
-| **Documentation** | 4 comprehensive guides |
+| **Documentation** | 3 comprehensive guides |
 | **CI/CD Workflows** | 3 (PR validation, release, security) |
-| **Security Level** | Pod Security Standards Restricted |
+| **Security Level** | Mixed (Privileged daemon/VSP, Restricted controller) |
 | **Deployment Options** | Helm + OLM bundle |
 | **Performance** | Plugin lookup ~250ns |
 | **Lines of Code** | Production-ready operator |
@@ -586,7 +584,7 @@ A: Implement the Plugin interface (~200 lines), register in init(). See [docs/pl
 A: Plugin registry lookup is 250 nanoseconds. Device discovery under 1ms. Minimal overhead - benchmarks prove it.
 
 **Q: Is this production-ready?**
-A: Yes. Pod Security Standards Restricted, network policies, security scanning, metrics, HA support, Helm/OLM packaging.
+A: Yes. Privileged daemon/VSP (required for hardware access), Restricted controller, network policies, security scanning, metrics, HA support, Helm/OLM packaging.
 
 **Q: Kubernetes or OpenShift only?**
 A: Both. Helm works on any Kubernetes 1.28+. OLM bundle is for OpenShift OperatorHub.
