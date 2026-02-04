@@ -446,11 +446,12 @@ func (d *Daemon) syncSingleDpuCR(dpuCR *configv1.DataProcessingUnit, existingCRM
 
 	// CR exists, update it to reflect all fields
 	needsSpecUpdate := !reflect.DeepEqual(currentDpuCR.Spec, dpuCR.Spec)
+	needsMetadataUpdate := mergeLabels(currentDpuCR, dpuCR.Labels)
 	// For status, compare conditions  rather than using reflect.DeepEqual
 	// which fails due to LastTransitionTime and other Kubernetes metadata differences
 	needsStatusUpdate := d.conditionsNeedUpdate(currentDpuCR.Status.Conditions, dpuCR.Status.Conditions)
 
-	if needsSpecUpdate {
+	if needsSpecUpdate || needsMetadataUpdate {
 		currentDpuCR.Spec = dpuCR.Spec
 		err := d.client.Update(context.TODO(), currentDpuCR)
 		if err != nil {
@@ -466,12 +467,30 @@ func (d *Daemon) syncSingleDpuCR(dpuCR *configv1.DataProcessingUnit, existingCRM
 		}
 	}
 
-	if needsSpecUpdate || needsStatusUpdate {
+	if needsSpecUpdate || needsMetadataUpdate || needsStatusUpdate {
 		d.log.Info("Updated DPU CR", "name", identifier, "dpuProductName", dpuCR.Spec.DpuProductName, "isDpuSide", dpuCR.Spec.IsDpuSide)
 		return true, nil
 	}
 
 	return false, nil
+}
+
+func mergeLabels(target *configv1.DataProcessingUnit, desired map[string]string) bool {
+	if len(desired) == 0 {
+		return false
+	}
+	if target.Labels == nil {
+		target.Labels = map[string]string{}
+	}
+
+	changed := false
+	for k, v := range desired {
+		if target.Labels[k] != v {
+			target.Labels[k] = v
+			changed = true
+		}
+	}
+	return changed
 }
 
 // conditionsNeedUpdate compares the latest condition and returns true if it differs.

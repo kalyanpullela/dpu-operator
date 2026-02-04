@@ -26,7 +26,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/openshift/dpu-operator/pkg/opi"
 	"github.com/openshift/dpu-operator/pkg/plugin"
-	"github.com/openshift/dpu-operator/pkg/plugin/pci"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -80,7 +79,7 @@ func (p *XSightPlugin) Info() plugin.PluginInfo {
 		Version:          PluginVersion,
 		Description:      "xSight DPU plugin for xSight hardware",
 		SupportedDevices: supportedDevices,
-		Capabilities:     []plugin.Capability{},
+		Capabilities:     []plugin.Capability{plugin.CapabilityNetworking},
 	}
 }
 
@@ -96,7 +95,7 @@ func (p *XSightPlugin) Initialize(ctx context.Context, config plugin.PluginConfi
 	p.config = config
 	p.opiEndpoint = config.OPIEndpoint
 	if p.opiEndpoint == "" {
-		p.opiEndpoint = "localhost:50051" // Default OPI endpoint
+		p.opiEndpoint = plugin.DefaultOPIEndpoint
 	}
 
 	p.log.Info("Initializing xSight plugin",
@@ -178,73 +177,14 @@ func (p *XSightPlugin) DiscoverDevices(ctx context.Context) ([]plugin.Device, er
 
 	p.log.Info("Discovering xSight devices")
 
-	var devices []plugin.Device
-
-	discoveredDevices, err := p.scanPCIBus(ctx)
+	devices, err := plugin.ScanDevices(supportedDevices, "xSight", "xsight", "XSIGHT", p.log)
 	if err != nil {
 		p.log.Error(err, "Failed to scan PCI bus")
 		return nil, fmt.Errorf("PCI scan failed: %w", err)
 	}
-
-	devices = append(devices, discoveredDevices...)
 	p.devices = devices
 
 	p.log.Info("xSight device discovery complete", "deviceCount", len(devices))
-	return devices, nil
-}
-
-// scanPCIBus scans the PCI bus for supported xSight devices.
-func (p *XSightPlugin) scanPCIBus(ctx context.Context) ([]plugin.Device, error) {
-	scanner := pci.NewScanner()
-	var devices []plugin.Device
-
-	// TODO: Update PCI IDs with actual xSight vendor and device IDs when available.
-	// Current IDs (XXXX:YYYY) are placeholders.
-	// Scan for each supported device ID
-	for _, supportedDevice := range supportedDevices {
-		pciDevices, err := scanner.ScanByVendorDevice(supportedDevice.VendorID, supportedDevice.DeviceID)
-		if err != nil {
-			p.log.V(1).Info("Failed to scan for PCI device",
-				"vendorID", supportedDevice.VendorID,
-				"deviceID", supportedDevice.DeviceID,
-				"error", err)
-			continue
-		}
-
-		for _, pciDev := range pciDevices {
-			// Create plugin device from PCI device
-			device := plugin.Device{
-				ID:         fmt.Sprintf("xsight-%s", pciDev.Address),
-				PCIAddress: pciDev.Address,
-				Vendor:     "xSight",
-				Model:      supportedDevice.Description,
-				Healthy:    true,
-				Metadata: map[string]string{
-					"pci_vendor_id": pciDev.VendorID,
-					"pci_device_id": pciDev.DeviceID,
-					"pci_class":     pciDev.Class,
-					"device_type":   supportedDevice.Description,
-					"driver":        pciDev.Driver,
-					"numa_node":     pciDev.NumaNode,
-				},
-			}
-
-			// Try to get serial number from VPD
-			if serialNum, err := scanner.GetSerialNumber(pciDev.Address); err == nil {
-				device.SerialNumber = serialNum
-			} else {
-				// Generate a stable ID based on PCI address
-				device.SerialNumber = fmt.Sprintf("XSIGHT-%s", pciDev.Address)
-			}
-
-			devices = append(devices, device)
-			p.log.Info("Discovered xSight device",
-				"pciAddress", pciDev.Address,
-				"model", device.Model,
-				"driver", pciDev.Driver)
-		}
-	}
-
 	return devices, nil
 }
 

@@ -76,7 +76,7 @@ func (p *MangoBoostPlugin) Info() plugin.PluginInfo {
 		Version:          PluginVersion,
 		Description:      "MangoBoost DPU plugin for MangoBoost hardware",
 		SupportedDevices: supportedDevices,
-		Capabilities:     []plugin.Capability{},
+		Capabilities:     []plugin.Capability{plugin.CapabilityNetworking},
 	}
 }
 
@@ -92,7 +92,7 @@ func (p *MangoBoostPlugin) Initialize(ctx context.Context, config plugin.PluginC
 	p.config = config
 	p.opiEndpoint = config.OPIEndpoint
 	if p.opiEndpoint == "" {
-		p.opiEndpoint = "localhost:50051"
+		p.opiEndpoint = plugin.DefaultOPIEndpoint
 	}
 
 	p.log.Info("Initializing MangoBoost plugin",
@@ -146,25 +146,14 @@ func (p *MangoBoostPlugin) DiscoverDevices(ctx context.Context) ([]plugin.Device
 
 	p.log.Info("Discovering MangoBoost devices")
 
-	var devices []plugin.Device
-
-	discoveredDevices, err := p.scanPCIBus(ctx)
+	devices, err := plugin.ScanDevices(supportedDevices, "MangoBoost", "mangoboost", "MANGOBOOST", p.log)
 	if err != nil {
 		p.log.Error(err, "Failed to scan PCI bus")
 		return nil, fmt.Errorf("PCI scan failed: %w", err)
 	}
-
-	devices = append(devices, discoveredDevices...)
 	p.devices = devices
 
 	p.log.Info("MangoBoost device discovery complete", "deviceCount", len(devices))
-	return devices, nil
-}
-
-// scanPCIBus scans the PCI bus for supported MangoBoost devices.
-func (p *MangoBoostPlugin) scanPCIBus(ctx context.Context) ([]plugin.Device, error) {
-	var devices []plugin.Device
-	// TODO: Implement actual PCI bus scanning when MangoBoost SDK is available
 	return devices, nil
 }
 

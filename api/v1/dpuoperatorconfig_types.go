@@ -31,6 +31,10 @@ import (
 type DpuOperatorConfigSpec struct {
 	// Set log level of the operator. Edit dpuoperatorconfig_types.go to remove/update
 	LogLevel int `json:"logLevel,omitempty"`
+
+	// ResourceName overrides the DPU device plugin resource name (default "openshift.io/dpu").
+	// +optional
+	ResourceName string `json:"resourceName,omitempty"`
 }
 
 // DpuOperatorConfigStatus defines the observed state of DpuOperatorConfig

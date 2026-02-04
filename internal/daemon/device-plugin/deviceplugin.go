@@ -21,9 +21,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-const (
-	DpuResourceName = "openshift.io/dpu"
-)
+var DpuResourceName = "openshift.io/dpu"
+
+func init() {
+	if value := os.Getenv("DPU_RESOURCE_NAME"); value != "" {
+		DpuResourceName = value
+	}
+}
 
 // dpServer manages the k8s Device Plugin Server
 type dpServer struct {

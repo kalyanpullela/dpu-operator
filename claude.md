@@ -573,7 +573,8 @@ Always read or re-open `CLAUDE.md` before starting significant work. If details 
 2. Create thin wrappers in `pkg/opi/` if needed for convenience
 3. Never expose vendor-specific types from OPI bridges in core controller logic
 4. Use gRPC clients configured with appropriate endpoints (configurable via DpuOperatorConfig)
-   or environment variables (`DPU_PLUGIN_OPI_ENDPOINT` / `DPU_PLUGIN_OPI_ENDPOINT_<VENDOR>` in hybrid mode)
+   or environment variables (`DPU_PLUGIN_OPI_ENDPOINT` / `DPU_PLUGIN_OPI_ENDPOINT_<VENDOR>` for core OPI,
+   `DPU_PLUGIN_OPI_NETWORK_ENDPOINT` / `DPU_PLUGIN_OPI_NETWORK_ENDPOINT_<VENDOR>` for EVPN-GW networking).
 5. Handle gRPC errors gracefully with retries and logging
 
 ## Generating Tests and Documentation

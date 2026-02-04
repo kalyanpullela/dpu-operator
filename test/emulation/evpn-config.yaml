@@ -1,0 +1,41 @@
+grpcport: 50051
+httpport: 8082
+tlsfiles:
+database: redis
+dbaddress: redis-evpn:6379
+buildenv: ci
+tracer: false
+subscribers:
+  - name: "lgm"
+    priority: 1
+    events: ["vrf", "svi", "logical-bridge"]
+  - name: "lci"
+    priority: 2
+    events: ["bridge-port"]
+interfaces:
+  phyports: []
+  grpcacc: "host"
+  grpchost: "00:20:00:00:14:48"
+  vrfmux: "eth0"
+  port-mux: "eth0"
+linuxfrr:
+  enabled: false
+  defaultvtep: "vxlan-vtep"
+  ipmtu: 1500
+  localas: 65000
+netlink:
+  enabled: true
+  pollinterval: 5
+  grddefaultroute: false
+  enableecmp: false
+p4:
+  enabled: false
+  config:
+    p4infofile: ""
+    binfile: ""
+loglevel:
+  db: "info"
+  grpc: "info"
+  linux: "info"
+  netlink: "info"
+  p4: "info"

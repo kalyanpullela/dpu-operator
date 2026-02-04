@@ -4,24 +4,36 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
-  name: dpuoperatorconfigs.config.openshift.io
+  name: dataprocessingunits.config.openshift.io
 spec:
   group: config.openshift.io
   names:
-    kind: DpuOperatorConfig
-    listKind: DpuOperatorConfigList
-    plural: dpuoperatorconfigs
-    singular: dpuoperatorconfig
+    kind: DataProcessingUnit
+    listKind: DataProcessingUnitList
+    plural: dataprocessingunits
+    shortNames:
+    - dpu
+    singular: dataprocessingunit
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+    - jsonPath: .spec.dpuProductName
+      name: DPU Product
+      type: string
+    - jsonPath: .spec.isDpuSide
+      name: DPU Side
+      type: boolean
+    - jsonPath: .spec.nodeName
+      name: Node Name
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
       name: Status
       type: string
     name: v1
     schema:
       openAPIV3Schema:
-        description: DpuOperatorConfig is the Schema for the dpuoperatorconfigs API
+        description: DataProcessingUnit is the Schema for the dataprocessingunits
+          API
         properties:
           apiVersion:
             description: |-
@@ -41,22 +53,26 @@ spec:
           metadata:
             type: object
           spec:
-            description: DpuOperatorConfigSpec defines the desired state of DpuOperatorConfig
+            description: DataProcessingUnitSpec defines the desired state of DataProcessingUnit
             properties:
-              logLevel:
-                description: Set log level of the operator. Edit dpuoperatorconfig_types.go
-                  to remove/update
-                type: integer
-              resourceName:
-                description: ResourceName overrides the DPU device plugin resource name
-                  (default "openshift.io/dpu").
+              dpuProductName:
+                description: DpuProductName is the vendor and model name of the DPU
                 type: string
+              isDpuSide:
+                description: IsDpuSide indicates if this DPU is on the DPU side
+                type: boolean
+              nodeName:
+                description: NodeName is the name of the node where this DPU is located
+                type: string
+            required:
+            - isDpuSide
+            - nodeName
             type: object
           status:
-            description: DpuOperatorConfigStatus defines the observed state of DpuOperatorConfig
+            description: DataProcessingUnitStatus defines the observed state of DataProcessingUnit
             properties:
               conditions:
-                description: Conditions is the status of the DpuOperatorConfig
+                description: Status is the status of the DPU
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

@@ -74,8 +74,10 @@ func (r *DataProcessingUnitConfigReconciler) Reconcile(ctx context.Context, req 
 		return ctrl.Result{}, err
 	}
 
-	annotationKey := fmt.Sprintf("dpu.config.openshift.io/config-%s", cfg.Name)
-	vfKey := vars.DpuConfigVFCountAnnotationPrefix + cfg.Name
+	annotationKey := fmt.Sprintf("dpu.config.openshift.io/config-%s.%s", cfg.Namespace, cfg.Name)
+	vfKey := fmt.Sprintf("%s%s.%s", vars.DpuConfigVFCountAnnotationPrefix, cfg.Namespace, cfg.Name)
+	legacyAnnotationKey := fmt.Sprintf("dpu.config.openshift.io/config-%s", cfg.Name)
+	legacyVfKey := vars.DpuConfigVFCountAnnotationPrefix + cfg.Name
 
 	matchedNames := make([]string, 0, len(dpuList.Items))
 
@@ -94,14 +96,25 @@ func (r *DataProcessingUnitConfigReconciler) Reconcile(ctx context.Context, req 
 				dpu.Annotations[annotationKey] = "true"
 				changed = true
 			}
+			if _, exists := dpu.Annotations[legacyAnnotationKey]; exists {
+				delete(dpu.Annotations, legacyAnnotationKey)
+				changed = true
+			}
 			if cfg.Spec.VfCount != nil {
 				vfValue := fmt.Sprintf("%d", *cfg.Spec.VfCount)
 				if dpu.Annotations[vfKey] != vfValue {
 					dpu.Annotations[vfKey] = vfValue
 					changed = true
 				}
+				if _, exists := dpu.Annotations[legacyVfKey]; exists {
+					delete(dpu.Annotations, legacyVfKey)
+					changed = true
+				}
 			} else if _, exists := dpu.Annotations[vfKey]; exists {
 				delete(dpu.Annotations, vfKey)
+				changed = true
+			} else if _, exists := dpu.Annotations[legacyVfKey]; exists {
+				delete(dpu.Annotations, legacyVfKey)
 				changed = true
 			}
 		} else {
@@ -109,8 +122,16 @@ func (r *DataProcessingUnitConfigReconciler) Reconcile(ctx context.Context, req 
 				delete(dpu.Annotations, annotationKey)
 				changed = true
 			}
+			if _, exists := dpu.Annotations[legacyAnnotationKey]; exists {
+				delete(dpu.Annotations, legacyAnnotationKey)
+				changed = true
+			}
 			if _, exists := dpu.Annotations[vfKey]; exists {
 				delete(dpu.Annotations, vfKey)
+				changed = true
+			}
+			if _, exists := dpu.Annotations[legacyVfKey]; exists {
+				delete(dpu.Annotations, legacyVfKey)
 				changed = true
 			}
 		}

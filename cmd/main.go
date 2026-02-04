@@ -52,14 +52,14 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
-func webhookReadinessCheck(mgr ctrl.Manager, enabled bool) healthz.Checker {
+func webhookReadinessCheck(mgr ctrl.Manager, enabled bool, port int) healthz.Checker {
 	return func(req *http.Request) error {
 		if !enabled {
 			return nil // Webhooks disabled, always ready
 		}
 
 		// Check if webhook TLS server is ready by trying to connect
-		conn, err := tls.Dial("tcp", ":9443", &tls.Config{InsecureSkipVerify: true})
+		conn, err := tls.Dial("tcp", fmt.Sprintf(":%d", port), &tls.Config{InsecureSkipVerify: true})
 		if err != nil {
 			return fmt.Errorf("webhook TLS server not ready: %w", err)
 		}
@@ -74,9 +74,11 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var binDataPath string
+	var webhookPort int
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":18090", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":18091", "The address the probe endpoint binds to.")
 	flag.StringVar(&binDataPath, "bindata", "./bindata", "bin data path")
+	flag.IntVar(&webhookPort, "webhook-port", 9443, "The port the webhook server listens on.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -95,7 +97,7 @@ func main() {
 			SecureServing:  true,
 			FilterProvider: filters.WithAuthenticationAndAuthorization,
 		},
-		WebhookServer:          webhook.NewServer(webhook.Options{Port: 9443}),
+		WebhookServer:          webhook.NewServer(webhook.Options{Port: webhookPort}),
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "1e46962d.openshift.io",
@@ -164,7 +166,7 @@ func main() {
 		os.Exit(1)
 	}
 	webhooksEnabled := os.Getenv("ENABLE_WEBHOOKS") != "false"
-	if err := mgr.AddReadyzCheck("readyz", webhookReadinessCheck(mgr, webhooksEnabled)); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", webhookReadinessCheck(mgr, webhooksEnabled, webhookPort)); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}

@@ -15,8 +15,8 @@ operator:
   # Number of replicas for the operator
   replicas: 1
 
-  # Log level (0=info, 1=debug, 2=trace)
-  logLevel: 0
+  # Log level ("info", "debug", "error", or integer > 0 for increased verbosity)
+  logLevel: info
 
   # Leader election configuration
   leaderElection:
@@ -99,6 +99,10 @@ webhook:
     enabled: true
   failurePolicy: Fail
 
+# Health probe configuration
+healthProbe:
+  port: 8081
+
 # Network policy
 networkPolicy:
   enabled: false
@@ -119,26 +123,49 @@ plugins:
   nvidia:
     enabled: true
     opiEndpoint: "localhost:50051"
+    networkEndpoint: "localhost:50056"
 
   # Intel IPU plugin
   intel:
     enabled: true
     opiEndpoint: "localhost:50052"
+    networkEndpoint: ""
 
   # Marvell Octeon plugin
   marvell:
     enabled: true
     opiEndpoint: "localhost:50053"
+    networkEndpoint: ""
 
   # xSight plugin
   xsight:
     enabled: true
     opiEndpoint: "localhost:50054"
+    networkEndpoint: ""
 
   # MangoBoost plugin (optional)
   mangoboost:
     enabled: false
     opiEndpoint: "localhost:50055"
+    networkEndpoint: ""
+
+# Image configuration for related components
+nri:
+  image:
+    repository: quay.io/openshift/dpu-network-resources-injector
+    pullPolicy: IfNotPresent
+    tag: "latest"
+
+# Vendor VSP images
+vspImages:
+  intelIpu: quay.io/openshift/dpu-intel-ipu-vsp:latest
+  intelNetsec: quay.io/openshift/dpu-intel-netsec-vsp:latest
+  intelP4: quay.io/openshift/dpu-intel-ipu-p4sdk:latest
+  marvellDpu: quay.io/openshift/dpu-marvell-vsp:latest
+  marvellCpAgent: quay.io/openshift/dpu-marvell-cp-agent:latest
+  nvidiaBf: quay.io/openshift/dpu-nvidia-bf-vsp:latest
+  xsight: quay.io/openshift/dpu-xsight-vsp:latest
+  mangoboost: quay.io/openshift/dpu-mangoboost-vsp:latest
 
 # DPU daemon configuration
 daemon:
@@ -146,7 +173,7 @@ daemon:
   image:
     repository: ghcr.io/openshift/dpu-daemon
     pullPolicy: IfNotPresent
-    tag: ""
+    tag: "latest"
 
   resources:
     limits:
@@ -165,10 +192,14 @@ daemon:
       operator: Exists
       effect: NoSchedule
 
-# CRD installation
-crds:
-  install: true
-  keep: true
+# CRDs are packaged under charts/dpu-operator/crds and installed by Helm
+# unless --skip-crds is provided.
+
+# Default DpuOperatorConfig creation
+operatorConfig:
+  create: true
+  logLevel: 0
+  resourceName: ""
 
 # Deployment strategy
 strategy:

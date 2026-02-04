@@ -186,6 +186,24 @@ type DetectedDpuWithPlugin struct {
 	Plugin *plugin.GrpcPlugin
 }
 
+func (d *DpuDetectorManager) defaultDpuLabels(detector VendorDetector, nodeName string, isDpuSide bool) map[string]string {
+	side := "host"
+	if isDpuSide {
+		side = "dpu"
+	}
+
+	vendor := strings.ToLower(detector.GetVendorName())
+	product := SanitizeForK8sName(detector.Name())
+
+	return map[string]string{
+		"dpu":                             "enabled",
+		"dpu.config.openshift.io/side":    side,
+		"dpu.config.openshift.io/vendor":  vendor,
+		"dpu.config.openshift.io/product": product,
+		"dpu.config.openshift.io/node":    nodeName,
+	}
+}
+
 func (d *DpuDetectorManager) DetectAll(imageManager images.ImageManager, client client.Client, pm utils.PathManager, nodeName string) ([]*DetectedDpuWithPlugin, error) {
 	var detectedDpus []*DetectedDpuWithPlugin
 
@@ -210,7 +228,8 @@ func (d *DpuDetectorManager) DetectAll(imageManager images.ImageManager, client 
 			uniqueIdentifier := d.uniqueIdentifierForNode(identifier, nodeName)
 			dpuCR := &v1.DataProcessingUnit{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: string(d.postFixDpuSideToIdentifier(uniqueIdentifier, isDpuSide)),
+					Name:   string(d.postFixDpuSideToIdentifier(uniqueIdentifier, isDpuSide)),
+					Labels: d.defaultDpuLabels(detector, nodeName, isDpuSide),
 				},
 				Spec: v1.DataProcessingUnitSpec{
 					DpuProductName: detector.Name(),
@@ -265,7 +284,8 @@ func (d *DpuDetectorManager) DetectAll(imageManager images.ImageManager, client 
 				uniqueIdentifier := d.uniqueIdentifierForNode(identifier, nodeName)
 				dpuCR := &v1.DataProcessingUnit{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: string(d.postFixDpuSideToIdentifier(uniqueIdentifier, isDpuSide)),
+						Name:   string(d.postFixDpuSideToIdentifier(uniqueIdentifier, isDpuSide)),
+						Labels: d.defaultDpuLabels(detector, nodeName, isDpuSide),
 					},
 					Spec: v1.DataProcessingUnitSpec{
 						DpuProductName: detector.Name(),
@@ -321,11 +341,16 @@ func (d *DpuDetectorManager) findRegistryPluginByVendor(vendor string) pkgplugin
 
 func pluginConfigFromEnv(vendor string) pkgplugin.PluginConfig {
 	endpoint := os.Getenv("DPU_PLUGIN_OPI_ENDPOINT")
+	networkEndpoint := os.Getenv("DPU_PLUGIN_OPI_NETWORK_ENDPOINT")
 
 	if vendor != "" {
 		key := "DPU_PLUGIN_OPI_ENDPOINT_" + strings.ToUpper(strings.ReplaceAll(vendor, "-", "_"))
 		if value := os.Getenv(key); value != "" {
 			endpoint = value
+		}
+		networkKey := "DPU_PLUGIN_OPI_NETWORK_ENDPOINT_" + strings.ToUpper(strings.ReplaceAll(vendor, "-", "_"))
+		if value := os.Getenv(networkKey); value != "" {
+			networkEndpoint = value
 		}
 	}
 
@@ -337,7 +362,8 @@ func pluginConfigFromEnv(vendor string) pkgplugin.PluginConfig {
 	}
 
 	return pkgplugin.PluginConfig{
-		OPIEndpoint: endpoint,
-		LogLevel:    logLevel,
+		OPIEndpoint:     endpoint,
+		NetworkEndpoint: networkEndpoint,
+		LogLevel:        logLevel,
 	}
 }

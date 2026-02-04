@@ -10,7 +10,7 @@ This operator will manage and configure data processing unit (DPUs) to be used i
 The operator uses a unified plugin architecture (`pkg/plugin`) to support multiple hardware vendors through a common interface. This architecture abstracts vendor-specific details and leverages OPI (Open Programmable Infrastructure) APIs where possible.
 
 **Supported Vendors:**
-*   **NVIDIA**: BlueField-2/3 networking via OPI bridge (storage/security planned)
+*   **NVIDIA**: BlueField-2/3 networking via OPI EVPN bridge (inventory via opi-nvidia-bridge; storage/security planned)
 *   **Intel**: IPU E2100 and NetSec Accelerator support via VSP
 *   **Marvell**: Octeon 10 support via VSP
 *   **MangoBoost**: Experimental discovery/inventory only

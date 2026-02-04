@@ -25,6 +25,7 @@ package emulation
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -43,6 +44,7 @@ const (
 	spdkEndpoint       = "localhost:50053"
 	marvellEndpoint    = "localhost:50054"
 	strongswanEndpoint = "localhost:50055"
+	evpnEndpoint       = "localhost:50056"
 )
 
 // TestNVIDIAPlugin_WithOPIBridge tests NVIDIA plugin against real OPI bridge
@@ -55,8 +57,9 @@ func TestNVIDIAPlugin_WithOPIBridge(t *testing.T) {
 
 	// Initialize with real OPI bridge endpoint
 	config := plugin.PluginConfig{
-		OPIEndpoint: nvidiaEndpoint,
-		LogLevel:    1,
+		OPIEndpoint:     nvidiaEndpoint,
+		NetworkEndpoint: evpnEndpoint,
+		LogLevel:        1,
 	}
 
 	t.Log("Initializing NVIDIA plugin with OPI bridge...")
@@ -98,7 +101,7 @@ func TestNVIDIAPlugin_WithOPIBridge(t *testing.T) {
 
 	port, err := nvPlugin.CreateBridgePort(ctx, portReq)
 	if err != nil {
-		t.Logf("CreateBridgePort failed (may not be fully implemented): %v", err)
+		t.Fatalf("CreateBridgePort failed: %v", err)
 	} else {
 		t.Logf("✓ Created bridge port: %s", port.Name)
 
@@ -106,7 +109,7 @@ func TestNVIDIAPlugin_WithOPIBridge(t *testing.T) {
 		if port != nil {
 			err = nvPlugin.DeleteBridgePort(ctx, port.ID)
 			if err != nil {
-				t.Logf("DeleteBridgePort failed: %v", err)
+				t.Fatalf("DeleteBridgePort failed: %v", err)
 			} else {
 				t.Log("✓ Deleted bridge port")
 			}
@@ -117,7 +120,7 @@ func TestNVIDIAPlugin_WithOPIBridge(t *testing.T) {
 	t.Log("Testing ListBridgePorts...")
 	ports, err := nvPlugin.ListBridgePorts(ctx)
 	if err != nil {
-		t.Logf("ListBridgePorts failed: %v", err)
+		t.Fatalf("ListBridgePorts failed: %v", err)
 	} else {
 		t.Logf("✓ Listed %d bridge ports", len(ports))
 	}
@@ -176,7 +179,11 @@ func TestIntelPlugin_WithOPIBridge(t *testing.T) {
 
 	port, err := intelPlugin.CreateBridgePort(ctx, portReq)
 	if err != nil {
-		t.Logf("CreateBridgePort failed (may not be fully implemented): %v", err)
+		if errors.Is(err, plugin.ErrNotImplemented) {
+			t.Log("CreateBridgePort not supported by bridge/plugin")
+		} else {
+			t.Logf("CreateBridgePort failed (may not be fully implemented): %v", err)
+		}
 	} else {
 		t.Logf("✓ Created bridge port: %s", port.Name)
 
@@ -279,6 +286,7 @@ func TestOPIBridgeAvailability(t *testing.T) {
 		"SPDK":       spdkEndpoint,
 		"Marvell":    marvellEndpoint,
 		"StrongSwan": strongswanEndpoint,
+		"EVPN":       evpnEndpoint,
 	}
 
 	t.Log("Checking OPI bridge availability:")

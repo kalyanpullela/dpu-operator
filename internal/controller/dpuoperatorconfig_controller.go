@@ -20,6 +20,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -67,6 +68,7 @@ func NewDpuOperatorConfigReconciler(client client.Client, imageManager images.Im
 		Client:           client,
 		imageManager:     imageManager,
 		imagePullPolicy:  "IfNotPresent",
+		pathManager:      *utils.NewPathManager("/"),
 		pluginRegistry:   plugin.DefaultRegistry(),
 		resourceRenderer: render.NewResourceRenderer(configKey),
 	}
@@ -310,7 +312,7 @@ func (r *DpuOperatorConfigReconciler) updateStatus(ctx context.Context, dpuOpera
 	return nil
 }
 
-func (r *DpuOperatorConfigReconciler) yamlVars() map[string]string {
+func (r *DpuOperatorConfigReconciler) yamlVars(cfg *configv1.DpuOperatorConfig) map[string]string {
 	logger := log.FromContext(context.TODO())
 
 	logger.Info("Detecting Kuberentes flavour")
@@ -337,18 +339,42 @@ func (r *DpuOperatorConfigReconciler) yamlVars() map[string]string {
 	}
 
 	// All the CRs will be in the same namespace as the operator config
+	resourceName := "openshift.io/dpu"
+	if cfg != nil && cfg.Spec.ResourceName != "" {
+		resourceName = cfg.Spec.ResourceName
+	}
+	logLevel := 0
+	if cfg != nil {
+		logLevel = cfg.Spec.LogLevel
+	}
+
 	data := map[string]string{
 		"Namespace":       vars.Namespace,
 		"ImagePullPolicy": r.imagePullPolicy,
-		"ResourceName":    "openshift.io/dpu", // FIXME: Hardcode for now
+		"ResourceName":    resourceName,
 		"CniDir":          p,
+		"PluginLogLevel":  fmt.Sprintf("%d", logLevel),
+		"DaemonLogLevel":  fmt.Sprintf("%d", logLevel),
+
+		"PluginOPIEndpoint":                 os.Getenv("DPU_PLUGIN_OPI_ENDPOINT"),
+		"PluginOPINetworkEndpoint":          os.Getenv("DPU_PLUGIN_OPI_NETWORK_ENDPOINT"),
+		"PluginOPIEndpointNvidia":           os.Getenv("DPU_PLUGIN_OPI_ENDPOINT_NVIDIA"),
+		"PluginOPIEndpointIntel":            os.Getenv("DPU_PLUGIN_OPI_ENDPOINT_INTEL"),
+		"PluginOPIEndpointMarvell":          os.Getenv("DPU_PLUGIN_OPI_ENDPOINT_MARVELL"),
+		"PluginOPIEndpointXSight":           os.Getenv("DPU_PLUGIN_OPI_ENDPOINT_XSIGHT"),
+		"PluginOPIEndpointMangoBoost":       os.Getenv("DPU_PLUGIN_OPI_ENDPOINT_MANGOBOOST"),
+		"PluginOPINetworkEndpointNvidia":    os.Getenv("DPU_PLUGIN_OPI_NETWORK_ENDPOINT_NVIDIA"),
+		"PluginOPINetworkEndpointIntel":     os.Getenv("DPU_PLUGIN_OPI_NETWORK_ENDPOINT_INTEL"),
+		"PluginOPINetworkEndpointMarvell":   os.Getenv("DPU_PLUGIN_OPI_NETWORK_ENDPOINT_MARVELL"),
+		"PluginOPINetworkEndpointXSight":    os.Getenv("DPU_PLUGIN_OPI_NETWORK_ENDPOINT_XSIGHT"),
+		"PluginOPINetworkEndpointMangoBoost": os.Getenv("DPU_PLUGIN_OPI_NETWORK_ENDPOINT_MANGOBOOST"),
 	}
 
 	return data
 }
 
 func (r *DpuOperatorConfigReconciler) createAndApplyAllFromBinData(logger logr.Logger, binDataPath string, cfg *configv1.DpuOperatorConfig) error {
-	mergedData := images.MergeVarsWithImages(r.imageManager, r.yamlVars())
+	mergedData := images.MergeVarsWithImages(r.imageManager, r.yamlVars(cfg))
 	return r.resourceRenderer.ApplyAllFromBinData(logger, binDataPath, mergedData, binData, r.Client, cfg)
 }
 

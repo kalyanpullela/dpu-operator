@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"os"
+	"strconv"
+	"strings"
 
 	daemon "github.com/openshift/dpu-operator/internal/daemon"
 	"github.com/openshift/dpu-operator/internal/platform"
@@ -23,10 +25,33 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
+func logLevelFromEnv() (zapcore.Level, bool) {
+	raw := strings.TrimSpace(os.Getenv("DPU_DAEMON_LOG_LEVEL"))
+	if raw == "" {
+		return 0, false
+	}
+
+	if parsed, err := zapcore.ParseLevel(strings.ToLower(raw)); err == nil {
+		return parsed, true
+	}
+
+	verbosity, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	if verbosity <= 0 {
+		return zapcore.InfoLevel, true
+	}
+	return zapcore.DebugLevel, true
+}
+
 func main() {
 	opts := zap.Options{
 		Development: true,
 		Level:       zapcore.DebugLevel,
+	}
+	if level, ok := logLevelFromEnv(); ok {
+		opts.Level = level
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()

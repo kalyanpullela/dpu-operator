@@ -21,6 +21,9 @@ package plugin
 // Capability represents a specific offload capability that a plugin can provide.
 type Capability string
 
+// DefaultOPIEndpoint is the default gRPC endpoint for OPI bridge communication.
+const DefaultOPIEndpoint = "localhost:50051"
+
 const (
 	// CapabilityNetworking indicates the plugin supports network offload operations.
 	CapabilityNetworking Capability = "networking"
@@ -105,6 +108,10 @@ type Device struct {
 type PluginConfig struct {
 	// OPIEndpoint is the gRPC endpoint for OPI bridge communication.
 	OPIEndpoint string
+
+	// NetworkEndpoint overrides the gRPC endpoint for EVPN-GW network operations.
+	// If empty, the OPIEndpoint is used.
+	NetworkEndpoint string
 
 	// LogLevel sets the logging verbosity for the plugin.
 	LogLevel int

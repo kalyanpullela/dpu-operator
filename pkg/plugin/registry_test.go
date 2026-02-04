@@ -501,7 +501,10 @@ func TestRegistryConcurrentAccess(t *testing.T) {
 // --- Default Registry Tests ---
 
 func TestDefaultRegistry(t *testing.T) {
-	// Clear default registry first
+	// Save existing plugins to restore later
+	savedPlugins := defaultRegistry.List()
+
+	// Clear default registry for testing
 	defaultRegistry.Clear()
 
 	plugin := NewMockPlugin("default-test", "Test", nil, nil)
@@ -522,10 +525,27 @@ func TestDefaultRegistry(t *testing.T) {
 
 	// Cleanup
 	_ = Unregister("default-test")
+
+	// Restore previously registered plugins
+	for _, p := range savedPlugins {
+		_ = defaultRegistry.Register(p)
+	}
 }
 
 func TestMustRegisterPanics(t *testing.T) {
+	// Save existing plugins to restore later
+	savedPlugins := defaultRegistry.List()
+
 	defaultRegistry.Clear()
+
+	// Cleanup function to restore state
+	defer func() {
+		// Restore previously registered plugins
+		defaultRegistry.Clear() // Clear any test plugins first
+		for _, p := range savedPlugins {
+			_ = defaultRegistry.Register(p)
+		}
+	}()
 
 	// Register first plugin normally
 	plugin1 := NewMockPlugin("panic-test", "Test", nil, nil)

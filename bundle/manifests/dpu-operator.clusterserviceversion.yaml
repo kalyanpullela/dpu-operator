@@ -432,6 +432,12 @@ spec:
                   value: quay.io/openshift/dpu-marvell-cp-agent:v1.0.0
                 - name: intel_netsec
                   value: quay.io/openshift/dpu-intel-netsec-vsp:v1.0.0
+                - name: nvidia_bf
+                  value: quay.io/openshift/dpu-nvidia-bf-vsp:v1.0.0
+                - name: xsight
+                  value: quay.io/openshift/dpu-xsight-vsp:v1.0.0
+                - name: mangoboost
+                  value: quay.io/openshift/dpu-mangoboost-vsp:v1.0.0
                 image: quay.io/openshift/dpu-operator:v1.0.0
                 livenessProbe:
                   httpGet:
@@ -555,7 +561,7 @@ spec:
     containerPort: 443
     deploymentName: dpu-operator-controller-manager
     failurePolicy: Fail
-    generateName: vdataprocessingunit.kb.io
+    generateName: vdpuoperatorconfig.kb.io
     rules:
     - apiGroups:
       - config.openshift.io
@@ -565,48 +571,8 @@ spec:
       - CREATE
       - UPDATE
       resources:
-      - dataprocessingunits
+      - dpuoperatorconfigs
     sideEffects: None
     targetPort: 9443
     type: ValidatingAdmissionWebhook
-    webhookPath: /validate-config-openshift-io-v1-dataprocessingunit
-  - admissionReviewVersions:
-    - v1
-    containerPort: 443
-    deploymentName: dpu-operator-controller-manager
-    failurePolicy: Fail
-    generateName: vdataprocessingunitconfig.kb.io
-    rules:
-    - apiGroups:
-      - config.openshift.io
-      apiVersions:
-      - v1
-      operations:
-      - CREATE
-      - UPDATE
-      resources:
-      - dataprocessingunitconfigs
-    sideEffects: None
-    targetPort: 9443
-    type: ValidatingAdmissionWebhook
-    webhookPath: /validate-config-openshift-io-v1-dataprocessingunitconfig
-  - admissionReviewVersions:
-    - v1
-    containerPort: 443
-    deploymentName: dpu-operator-controller-manager
-    failurePolicy: Fail
-    generateName: vservicefunctionchain.kb.io
-    rules:
-    - apiGroups:
-      - config.openshift.io
-      apiVersions:
-      - v1
-      operations:
-      - CREATE
-      - UPDATE
-      resources:
-      - servicefunctionchains
-    sideEffects: None
-    targetPort: 9443
-    type: ValidatingAdmissionWebhook
-    webhookPath: /validate-config-openshift-io-v1-servicefunctionchain
+    webhookPath: /validate-config-openshift-io-v1-dpuoperatorconfig

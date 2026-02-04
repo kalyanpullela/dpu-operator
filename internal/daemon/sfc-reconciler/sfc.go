@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/dpu-operator/api/v1"
+	deviceplugin "github.com/openshift/dpu-operator/internal/daemon/device-plugin"
 	"github.com/openshift/dpu-operator/pkgs/vars"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -34,6 +35,7 @@ type SfcReconciler struct {
 
 func networkFunctionPod(name string, image string, nodeSelector map[string]string) *corev1.Pod {
 	trueVar := true
+	resourceName := corev1.ResourceName(deviceplugin.DpuResourceName)
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -56,10 +58,10 @@ func networkFunctionPod(name string, image string, nodeSelector map[string]strin
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
-							"openshift.io/dpu": resource.MustParse("2"),
+							resourceName: resource.MustParse("2"),
 						},
 						Limits: corev1.ResourceList{
-							"openshift.io/dpu": resource.MustParse("2"),
+							resourceName: resource.MustParse("2"),
 						},
 					},
 					SecurityContext: &corev1.SecurityContext{

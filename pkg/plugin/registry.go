@@ -18,6 +18,7 @@ package plugin
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -144,7 +145,7 @@ func (r *Registry) GetByVendorDevice(vendorID, deviceID string) Plugin {
 	return r.GetByDeviceID(vendorID + ":" + deviceID)
 }
 
-// List returns all registered plugins.
+// List returns all registered plugins, sorted by name for deterministic iteration.
 func (r *Registry) List() []Plugin {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -153,10 +154,13 @@ func (r *Registry) List() []Plugin {
 	for _, p := range r.plugins {
 		result = append(result, p)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Info().Name < result[j].Info().Name
+	})
 	return result
 }
 
-// ListNames returns the names of all registered plugins.
+// ListNames returns the names of all registered plugins, sorted alphabetically.
 func (r *Registry) ListNames() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -165,6 +169,7 @@ func (r *Registry) ListNames() []string {
 	for name := range r.plugins {
 		result = append(result, name)
 	}
+	sort.Strings(result)
 	return result
 }
 
@@ -175,7 +180,7 @@ func (r *Registry) Count() int {
 	return len(r.plugins)
 }
 
-// GetByCapability returns all plugins that support the given capability.
+// GetByCapability returns all plugins that support the given capability, sorted by name.
 func (r *Registry) GetByCapability(cap Capability) []Plugin {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -190,10 +195,13 @@ func (r *Registry) GetByCapability(cap Capability) []Plugin {
 			}
 		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Info().Name < result[j].Info().Name
+	})
 	return result
 }
 
-// GetNetworkPlugins returns all plugins that implement NetworkPlugin.
+// GetNetworkPlugins returns all plugins that implement NetworkPlugin, sorted by name.
 func (r *Registry) GetNetworkPlugins() []NetworkPlugin {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -204,10 +212,13 @@ func (r *Registry) GetNetworkPlugins() []NetworkPlugin {
 			result = append(result, np)
 		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Info().Name < result[j].Info().Name
+	})
 	return result
 }
 
-// GetStoragePlugins returns all plugins that implement StoragePlugin.
+// GetStoragePlugins returns all plugins that implement StoragePlugin, sorted by name.
 func (r *Registry) GetStoragePlugins() []StoragePlugin {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -218,10 +229,13 @@ func (r *Registry) GetStoragePlugins() []StoragePlugin {
 			result = append(result, sp)
 		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Info().Name < result[j].Info().Name
+	})
 	return result
 }
 
-// GetSecurityPlugins returns all plugins that implement SecurityPlugin.
+// GetSecurityPlugins returns all plugins that implement SecurityPlugin, sorted by name.
 func (r *Registry) GetSecurityPlugins() []SecurityPlugin {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -232,6 +246,9 @@ func (r *Registry) GetSecurityPlugins() []SecurityPlugin {
 			result = append(result, sp)
 		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Info().Name < result[j].Info().Name
+	})
 	return result
 }
 

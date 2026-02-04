@@ -19,7 +19,6 @@ spec:
     - ports:
         - protocol: TCP
           port: {{ .Values.metrics.port }}
-      from: []  # Allow from any source
     {{- end }}
 
     # Allow webhook traffic

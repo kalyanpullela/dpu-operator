@@ -38,7 +38,7 @@ pause
 # ============================================
 section "Step 1: Start OPI Bridges with Logging"
 
-echo "Starting 5 OPI bridges in the background..."
+echo "Starting 6 OPI bridges in the background..."
 cd test/emulation
 docker-compose up -d
 sleep 5
@@ -49,8 +49,8 @@ docker ps --format "table {{.Names}}\t{{.Ports}}" | grep opi-
 
 echo ""
 echo "Each bridge exposes:"
-echo "  • gRPC API on port 50051-50055"
-echo "  • HTTP gateway on port 8082-8086"
+echo "  • gRPC API on port 50051-50056"
+echo "  • HTTP gateway on port 8082-8087"
 pause
 
 # ============================================
@@ -122,11 +122,11 @@ pause
 # ============================================
 section "Step 5: Prove Multi-Bridge Communication"
 
-echo "Now let's hit ALL 5 bridges simultaneously..."
+echo "Now let's hit ALL 6 bridges simultaneously..."
 echo ""
 
 # Clear logs
-for bridge in opi-nvidia-emulator opi-intel-emulator opi-spdk-emulator opi-marvell-emulator opi-strongswan-emulator; do
+for bridge in opi-nvidia-emulator opi-intel-emulator opi-spdk-emulator opi-marvell-emulator opi-strongswan-emulator opi-evpn-emulator; do
     docker logs $bridge 2>&1 > /dev/null || true
 done
 
@@ -137,7 +137,7 @@ echo ""
 echo "Checking which bridges received traffic..."
 echo ""
 
-for bridge in opi-nvidia-emulator opi-intel-emulator opi-spdk-emulator opi-marvell-emulator opi-strongswan-emulator; do
+for bridge in opi-nvidia-emulator opi-intel-emulator opi-spdk-emulator opi-marvell-emulator opi-strongswan-emulator opi-evpn-emulator; do
     LOG_LINES=$(docker logs $bridge 2>&1 | wc -l)
     if [ $LOG_LINES -gt 0 ]; then
         echo -e "${GREEN}✓ $bridge: $LOG_LINES log lines (ACTIVE)${NC}"
@@ -257,7 +257,7 @@ echo -e "${GREEN}What we demonstrated:${NC}"
 echo ""
 echo "1. ✓ Watched live gRPC requests in bridge logs"
 echo "2. ✓ Saw plugin tests generate real traffic"
-echo "3. ✓ All 5 bridges received connections"
+echo "3. ✓ All 6 bridges received connections"
 echo "4. ✓ HTTP gateways responded to queries"
 echo "5. ✓ Tests fail when bridges are stopped"
 echo "6. ✓ Tests pass when bridges are running"

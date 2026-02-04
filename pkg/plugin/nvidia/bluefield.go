@@ -27,11 +27,12 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/openshift/dpu-operator/pkg/plugin"
-	"github.com/openshift/dpu-operator/pkg/plugin/pci"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/openshift/dpu-operator/pkg/opi"
 	evpnpb "github.com/opiproject/opi-api/network/evpn-gw/v1alpha1/gen/go"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -66,11 +67,17 @@ type BlueFieldPlugin struct {
 	// OPI endpoint for opi-nvidia-bridge communication
 	opiEndpoint string
 
+	// OPI endpoint for EVPN-GW network operations
+	networkEndpoint string
+
 	// Cache of discovered devices
 	devices []plugin.Device
 
 	// gRPC client for OPI bridge
 	opiClient *opi.Client
+
+	// gRPC client for EVPN-GW network operations (optional)
+	opiNetworkClient *opi.Client
 }
 
 // New creates a new NVIDIA BlueField plugin instance.
@@ -78,6 +85,13 @@ func New() *BlueFieldPlugin {
 	return &BlueFieldPlugin{
 		log: ctrl.Log.WithName("plugin").WithName("nvidia"),
 	}
+}
+
+func (p *BlueFieldPlugin) networkClient() *opi.Client {
+	if p.opiNetworkClient != nil {
+		return p.opiNetworkClient
+	}
+	return p.opiClient
 }
 
 // Info returns metadata about this plugin.
@@ -108,11 +122,13 @@ func (p *BlueFieldPlugin) Initialize(ctx context.Context, config plugin.PluginCo
 	p.config = config
 	p.opiEndpoint = config.OPIEndpoint
 	if p.opiEndpoint == "" {
-		p.opiEndpoint = "localhost:50051" // Default OPI endpoint
+		p.opiEndpoint = plugin.DefaultOPIEndpoint
 	}
+	p.networkEndpoint = config.NetworkEndpoint
 
 	p.log.Info("Initializing NVIDIA BlueField plugin",
 		"opiEndpoint", p.opiEndpoint,
+		"networkEndpoint", p.networkEndpoint,
 		"logLevel", config.LogLevel)
 
 	// Initialize gRPC connection to opi-nvidia-bridge
@@ -121,6 +137,17 @@ func (p *BlueFieldPlugin) Initialize(ctx context.Context, config plugin.PluginCo
 	if err != nil {
 		p.log.Error(err, "Failed to create OPI client")
 		return fmt.Errorf("failed to create OPI client: %w", err)
+	}
+
+	if p.networkEndpoint == "" || p.networkEndpoint == p.opiEndpoint {
+		p.opiNetworkClient = p.opiClient
+	} else {
+		p.opiNetworkClient, err = opi.NewClient(p.networkEndpoint)
+		if err != nil {
+			_ = p.opiClient.Close()
+			p.log.Error(err, "Failed to create OPI network client")
+			return fmt.Errorf("failed to create OPI network client: %w", err)
+		}
 	}
 
 	// Verify connection with Ping (optional, using Lifecycle)
@@ -150,6 +177,11 @@ func (p *BlueFieldPlugin) Shutdown(ctx context.Context) error {
 			p.log.Error(err, "Error closing OPI client")
 		}
 	}
+	if p.opiNetworkClient != nil && p.opiNetworkClient != p.opiClient {
+		if err := p.opiNetworkClient.Close(); err != nil {
+			p.log.Error(err, "Error closing OPI network client")
+		}
+	}
 
 	p.initialized = false
 	p.devices = nil
@@ -167,17 +199,19 @@ func (p *BlueFieldPlugin) HealthCheck(ctx context.Context) error {
 	}
 
 	// Check if OPI client is connected
-	if !p.opiClient.IsConnected() {
-		return fmt.Errorf("OPI client not connected")
-	}
+	if p.opiClient != nil {
+		if !p.opiClient.IsConnected() {
+			return fmt.Errorf("OPI client not connected")
+		}
 
-	// Try to ping the OPI bridge if Lifecycle service is available
-	// Note: Some OPI bridges may not implement Lifecycle service, so we
-	// make this a soft check rather than failing health entirely
-	_, err := p.opiClient.Lifecycle().Ping(ctx)
-	if err != nil {
-		// Log warning but don't fail - bridge might not implement Lifecycle
-		p.log.V(1).Info("Lifecycle.Ping not available (may not be implemented)", "error", err.Error())
+		// Try to ping the OPI bridge if Lifecycle service is available
+		// Note: Some OPI bridges may not implement Lifecycle service, so we
+		// make this a soft check rather than failing health entirely
+		_, err := p.opiClient.Lifecycle().Ping(ctx)
+		if err != nil {
+			// Log warning but don't fail - bridge might not implement Lifecycle
+			p.log.V(1).Info("Lifecycle.Ping not available (may not be implemented)", "error", err.Error())
+		}
 	}
 
 	return nil
@@ -194,16 +228,11 @@ func (p *BlueFieldPlugin) DiscoverDevices(ctx context.Context) ([]plugin.Device,
 
 	p.log.Info("Discovering NVIDIA BlueField devices")
 
-	var devices []plugin.Device
-
-	// Scan PCI bus for supported devices
-	// This is a simplified implementation; in production, we would use sysfs/lspci
-	localDevices, err := p.scanPCIBus(ctx)
+	devices, err := plugin.ScanDevices(supportedDevices, "NVIDIA", "nvidia", "NV", p.log)
 	if err != nil {
 		p.log.Error(err, "Failed to scan PCI bus")
 		// Continue even if local scan fails if we can get data from OPI
 	}
-	devices = append(devices, localDevices...)
 
 	// Also query OPI bridge for what it sees
 	resp, err := p.opiClient.Lifecycle().GetDevices(ctx)
@@ -239,59 +268,6 @@ func (p *BlueFieldPlugin) DiscoverDevices(ctx context.Context) ([]plugin.Device,
 	p.devices = devices
 
 	p.log.Info("BlueField device discovery complete", "deviceCount", len(devices))
-	return devices, nil
-}
-
-// scanPCIBus scans the PCI bus for supported NVIDIA devices.
-func (p *BlueFieldPlugin) scanPCIBus(ctx context.Context) ([]plugin.Device, error) {
-	scanner := pci.NewScanner()
-	var devices []plugin.Device
-
-	// Scan for each supported device ID
-	for _, supportedDevice := range supportedDevices {
-		pciDevices, err := scanner.ScanByVendorDevice(supportedDevice.VendorID, supportedDevice.DeviceID)
-		if err != nil {
-			p.log.V(1).Info("Failed to scan for PCI device",
-				"vendorID", supportedDevice.VendorID,
-				"deviceID", supportedDevice.DeviceID,
-				"error", err)
-			continue
-		}
-
-		for _, pciDev := range pciDevices {
-			// Create plugin device from PCI device
-			device := plugin.Device{
-				ID:         fmt.Sprintf("nvidia-%s", pciDev.Address),
-				PCIAddress: pciDev.Address,
-				Vendor:     "NVIDIA",
-				Model:      supportedDevice.Description,
-				Healthy:    true,
-				Metadata: map[string]string{
-					"pci_vendor_id": pciDev.VendorID,
-					"pci_device_id": pciDev.DeviceID,
-					"pci_class":     pciDev.Class,
-					"device_type":   supportedDevice.Description,
-					"driver":        pciDev.Driver,
-					"numa_node":     pciDev.NumaNode,
-				},
-			}
-
-			// Try to get serial number from VPD
-			if serialNum, err := scanner.GetSerialNumber(pciDev.Address); err == nil {
-				device.SerialNumber = serialNum
-			} else {
-				// Generate a stable ID based on PCI address
-				device.SerialNumber = fmt.Sprintf("NV-%s", pciDev.Address)
-			}
-
-			devices = append(devices, device)
-			p.log.Info("Discovered NVIDIA BlueField device",
-				"pciAddress", pciDev.Address,
-				"model", device.Model,
-				"driver", pciDev.Driver)
-		}
-	}
-
 	return devices, nil
 }
 
@@ -346,6 +322,47 @@ func (p *BlueFieldPlugin) GetInventory(ctx context.Context, deviceID string) (*p
 
 // --- NetworkPlugin interface implementation ---
 
+func logicalBridgeResourceName(id string) string {
+	return fmt.Sprintf("//network.opiproject.org/bridges/%s", id)
+}
+
+func (p *BlueFieldPlugin) ensureLogicalBridge(ctx context.Context, vlanID int32) (string, error) {
+	bridgeID := fmt.Sprintf("bridge-vlan-%d", vlanID)
+	bridgeName := logicalBridgeResourceName(bridgeID)
+
+	_, err := p.networkClient().Network().GetLogicalBridge(ctx, bridgeName)
+	if err == nil {
+		return bridgeName, nil
+	}
+	if status.Code(err) == codes.Unimplemented {
+		p.log.Info("OPI bridge does not implement LogicalBridgeService", "error", err.Error())
+		return "", plugin.ErrNotImplemented
+	}
+	if status.Code(err) != codes.NotFound {
+		return "", fmt.Errorf("OPI get logical bridge failed: %w", err)
+	}
+
+	req := &evpnpb.CreateLogicalBridgeRequest{
+		LogicalBridgeId: bridgeID,
+		LogicalBridge: &evpnpb.LogicalBridge{
+			Spec: &evpnpb.LogicalBridgeSpec{
+				VlanId: uint32(vlanID),
+			},
+		},
+	}
+
+	resp, err := p.networkClient().Network().CreateLogicalBridge(ctx, req)
+	if err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			p.log.Info("OPI bridge does not implement LogicalBridgeService", "error", err.Error())
+			return "", plugin.ErrNotImplemented
+		}
+		return "", fmt.Errorf("OPI create logical bridge failed: %w", err)
+	}
+
+	return resp.Name, nil
+}
+
 // CreateBridgePort creates a new bridge port for a network function.
 func (p *BlueFieldPlugin) CreateBridgePort(ctx context.Context, request *plugin.BridgePortRequest) (*plugin.BridgePort, error) {
 	p.mu.RLock()
@@ -363,20 +380,35 @@ func (p *BlueFieldPlugin) CreateBridgePort(ctx context.Context, request *plugin.
 		return nil, fmt.Errorf("invalid MAC address: %w", err)
 	}
 
+	vlanID := int32(1)
+	if request.VLANID != nil && *request.VLANID > 0 {
+		vlanID = int32(*request.VLANID)
+	}
+
+	logicalBridgeName, err := p.ensureLogicalBridge(ctx, vlanID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Call OPI bridge
 	req := &evpnpb.CreateBridgePortRequest{
 		BridgePortId: request.Name,
 		BridgePort: &evpnpb.BridgePort{
 			Name: request.Name,
 			Spec: &evpnpb.BridgePortSpec{
-				MacAddress: mac,
-				Ptype:      evpnpb.BridgePortType_BRIDGE_PORT_TYPE_ACCESS, // Default to access
+				MacAddress:     mac,
+				Ptype:          evpnpb.BridgePortType_BRIDGE_PORT_TYPE_ACCESS, // Default to access
+				LogicalBridges: []string{logicalBridgeName},
 			},
 		},
 	}
 
-	resp, err := p.opiClient.Network().CreateBridgePort(ctx, req)
+	resp, err := p.networkClient().Network().CreateBridgePort(ctx, req)
 	if err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			p.log.Info("OPI bridge does not implement BridgePortService", "error", err.Error())
+			return nil, plugin.ErrNotImplemented
+		}
 		p.log.Error(err, "Failed to create bridge port via OPI")
 		return nil, fmt.Errorf("OPI creation failed: %w", err)
 	}
@@ -412,8 +444,12 @@ func (p *BlueFieldPlugin) DeleteBridgePort(ctx context.Context, portID string) e
 
 	p.log.Info("Deleting bridge port", "portID", portID)
 
-	err := p.opiClient.Network().DeleteBridgePort(ctx, portID)
+	err := p.networkClient().Network().DeleteBridgePort(ctx, portID)
 	if err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			p.log.Info("OPI bridge does not implement BridgePortService", "error", err.Error())
+			return plugin.ErrNotImplemented
+		}
 		return fmt.Errorf("OPI delete failed: %w", err)
 	}
 
@@ -429,8 +465,12 @@ func (p *BlueFieldPlugin) GetBridgePort(ctx context.Context, portID string) (*pl
 		return nil, plugin.ErrNotInitialized
 	}
 
-	resp, err := p.opiClient.Network().GetBridgePort(ctx, portID)
+	resp, err := p.networkClient().Network().GetBridgePort(ctx, portID)
 	if err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			p.log.Info("OPI bridge does not implement BridgePortService", "error", err.Error())
+			return nil, plugin.ErrNotImplemented
+		}
 		return nil, fmt.Errorf("OPI get failed: %w", err)
 	}
 
@@ -456,8 +496,12 @@ func (p *BlueFieldPlugin) ListBridgePorts(ctx context.Context) ([]*plugin.Bridge
 		return nil, plugin.ErrNotInitialized
 	}
 
-	resp, err := p.opiClient.Network().ListBridgePorts(ctx)
+	resp, err := p.networkClient().Network().ListBridgePorts(ctx)
 	if err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			p.log.Info("OPI bridge does not implement BridgePortService", "error", err.Error())
+			return nil, plugin.ErrNotImplemented
+		}
 		return nil, fmt.Errorf("OPI list failed: %w", err)
 	}
 
@@ -506,10 +550,7 @@ func (p *BlueFieldPlugin) GetVFCount(ctx context.Context, deviceID string) (int,
 		return 0, plugin.ErrNotInitialized
 	}
 
-	// OPI currently doesn't expose getting VF count specifically via Lifecycle per device?
-	// It's not in the vendored interface used in client.go (only SetNumVfs).
-	// So we return 0 or stub.
-	return 0, nil
+	return 0, plugin.ErrNotImplemented
 }
 
 // CreateNetworkFunction sets up a network function between input and output ports.
@@ -521,11 +562,8 @@ func (p *BlueFieldPlugin) CreateNetworkFunction(ctx context.Context, input, outp
 		return plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Creating network function", "input", input, "output", output)
-
-	// Stub for OPI logic. This likely maps to CreateLogicalBridge or similar.
-	// For now, return nil as stub.
-	return nil
+	p.log.Info("CreateNetworkFunction not implemented for NVIDIA BlueField plugin", "input", input, "output", output)
+	return plugin.ErrNotImplemented
 }
 
 // DeleteNetworkFunction removes a network function.
@@ -537,8 +575,8 @@ func (p *BlueFieldPlugin) DeleteNetworkFunction(ctx context.Context, input, outp
 		return plugin.ErrNotInitialized
 	}
 
-	p.log.Info("Deleting network function", "input", input, "output", output)
-	return nil
+	p.log.Info("DeleteNetworkFunction not implemented for NVIDIA BlueField plugin", "input", input, "output", output)
+	return plugin.ErrNotImplemented
 }
 
 // Ensure BlueFieldPlugin implements the required interfaces.

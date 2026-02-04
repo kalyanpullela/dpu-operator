@@ -53,18 +53,69 @@ spec:
         - --leader-elect-renew-deadline={{ .Values.operator.leaderElection.renewDeadline }}
         - --leader-elect-retry-period={{ .Values.operator.leaderElection.retryPeriod }}
         {{- end }}
+        - --health-probe-bind-address=:{{ .Values.healthProbe.port }}
         {{- if .Values.metrics.enabled }}
         - --metrics-bind-address=:{{ .Values.metrics.port }}
         {{- else }}
         - --metrics-bind-address=0
         {{- end }}
+        {{- if .Values.webhook.enabled }}
+        - --webhook-port={{ .Values.webhook.port }}
+        {{- end }}
         - --zap-log-level={{ .Values.operator.logLevel }}
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: ENABLE_WEBHOOKS
+          value: {{ ternary "true" "false" .Values.webhook.enabled | quote }}
+        - name: DpuOperatorDaemonImage
+          value: {{ printf "%s:%s" .Values.daemon.image.repository (.Values.daemon.image.tag | default "latest") | quote }}
+        - name: NRIWebhookImage
+          value: {{ printf "%s:%s" .Values.nri.image.repository (.Values.nri.image.tag | default "latest") | quote }}
+        - name: intel_ipu
+          value: {{ .Values.vspImages.intelIpu | quote }}
+        - name: intel_netsec
+          value: {{ .Values.vspImages.intelNetsec | quote }}
+        - name: IntelVspP4Image
+          value: {{ .Values.vspImages.intelP4 | quote }}
+        - name: marvell_dpu
+          value: {{ .Values.vspImages.marvellDpu | quote }}
+        - name: MarvellVspCpAgentImage
+          value: {{ .Values.vspImages.marvellCpAgent | quote }}
+        - name: nvidia_bf
+          value: {{ .Values.vspImages.nvidiaBf | quote }}
+        - name: xsight
+          value: {{ .Values.vspImages.xsight | quote }}
+        - name: mangoboost
+          value: {{ .Values.vspImages.mangoboost | quote }}
+        - name: DPU_PLUGIN_OPI_ENDPOINT_NVIDIA
+          value: {{ .Values.plugins.nvidia.opiEndpoint | quote }}
+        - name: DPU_PLUGIN_OPI_ENDPOINT_INTEL
+          value: {{ .Values.plugins.intel.opiEndpoint | quote }}
+        - name: DPU_PLUGIN_OPI_ENDPOINT_MARVELL
+          value: {{ .Values.plugins.marvell.opiEndpoint | quote }}
+        - name: DPU_PLUGIN_OPI_ENDPOINT_XSIGHT
+          value: {{ .Values.plugins.xsight.opiEndpoint | quote }}
+        - name: DPU_PLUGIN_OPI_ENDPOINT_MANGOBOOST
+          value: {{ .Values.plugins.mangoboost.opiEndpoint | quote }}
+        - name: DPU_PLUGIN_OPI_NETWORK_ENDPOINT_NVIDIA
+          value: {{ .Values.plugins.nvidia.networkEndpoint | quote }}
+        - name: DPU_PLUGIN_OPI_NETWORK_ENDPOINT_INTEL
+          value: {{ .Values.plugins.intel.networkEndpoint | quote }}
+        - name: DPU_PLUGIN_OPI_NETWORK_ENDPOINT_MARVELL
+          value: {{ .Values.plugins.marvell.networkEndpoint | quote }}
+        - name: DPU_PLUGIN_OPI_NETWORK_ENDPOINT_XSIGHT
+          value: {{ .Values.plugins.xsight.networkEndpoint | quote }}
+        - name: DPU_PLUGIN_OPI_NETWORK_ENDPOINT_MANGOBOOST
+          value: {{ .Values.plugins.mangoboost.networkEndpoint | quote }}
         {{- with .Values.securityContext }}
         securityContext:
           {{- toYaml . | nindent 10 }}
         {{- end }}
         ports:
-        - containerPort: 8081
+        - containerPort: {{ .Values.healthProbe.port }}
           name: health
           protocol: TCP
         {{- if .Values.metrics.enabled }}

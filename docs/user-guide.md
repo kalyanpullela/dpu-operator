@@ -75,6 +75,8 @@ metadata:
 spec:
   # Log verbosity (0-10)
   logLevel: 0
+  # Optional override for the DPU resource name used by NADs/device plugins
+  # resourceName: "openshift.io/dpu"
 ```
 
 Apply:
@@ -85,6 +87,11 @@ kubectl apply -f dpuoperatorconfig.yaml
 
 **Note**: The name must be `dpu-operator-config` as enforced by the validating webhook.
 
+The optional `resourceName` field controls the DPU resource name used by the
+device plugin, NetworkAttachmentDefinitions, and ServiceFunctionChain resource
+requests. If you override it, any workloads requesting DPU resources should use
+the same value.
+
 ### Vendor-Specific Configuration
 
 Vendor-specific configuration is managed through environment variables and ConfigMaps.
@@ -93,7 +100,12 @@ See the vendor-specific plugin documentation for details on configuration option
 For registry plugins (hybrid runtime), you can configure OPI bridge endpoints via:
 - `DPU_PLUGIN_OPI_ENDPOINT` (global default)
 - `DPU_PLUGIN_OPI_ENDPOINT_<VENDOR>` (vendor-specific override, e.g. `DPU_PLUGIN_OPI_ENDPOINT_NVIDIA`)
+- `DPU_PLUGIN_OPI_NETWORK_ENDPOINT` (global default for EVPN-GW networking)
+- `DPU_PLUGIN_OPI_NETWORK_ENDPOINT_<VENDOR>` (vendor-specific override, e.g. `DPU_PLUGIN_OPI_NETWORK_ENDPOINT_NVIDIA`)
 - `DPU_PLUGIN_LOG_LEVEL` (optional integer log level)
+
+The DPU daemon log level can be configured via the DpuOperatorConfig `logLevel` field, which
+propagates to the daemon as `DPU_DAEMON_LOG_LEVEL` and to plugins as `DPU_PLUGIN_LOG_LEVEL`.
 
 ## Discovering DPUs
 
@@ -154,7 +166,9 @@ These resources are typically managed by the operator and should not be manually
 
 ### DataProcessingUnitConfig (VF Count)
 
-Use `DataProcessingUnitConfig` to apply VF count overrides to matching DPUs:
+Use `DataProcessingUnitConfig` to apply VF count overrides to matching DPUs. The daemon labels
+each discovered DPU with `dpu=enabled` plus vendor and node labels, so selector-based configs
+work out of the box.
 
 ```yaml
 apiVersion: config.openshift.io/v1
@@ -168,7 +182,7 @@ spec:
   vfCount: 8
 ```
 
-The controller writes a config-specific annotation (`dpu.config.openshift.io/vf-count/<configName>`).
+The controller writes a config-specific annotation (`dpu.config.openshift.io/vf-count/<namespace>.<configName>`).
 If multiple configs apply different VF counts to the same DPU, the daemon will log a conflict and
 skip applying the change until the conflict is resolved.
 
@@ -183,7 +197,7 @@ metadata:
   name: sfc-sample
 spec:
   nodeSelector:
-    dpu: "true"
+    dpu.config.openshift.io/dpuside: "dpu"
   networkFunctions:
     - name: firewall
       image: nginx:latest
@@ -194,6 +208,11 @@ spec:
         requests: 2
         limits: 2
 ```
+
+If `networks` is omitted, the controller selects a default based on `nodeSelector`:
+
+- `dpu.config.openshift.io/dpuside: dpu` → uses `dpunfcni-conf`
+- `dpu.config.openshift.io/dpuside: dpu-host` (or no selector) → uses `default-sriov-net`
 
 ## DPU Features
 

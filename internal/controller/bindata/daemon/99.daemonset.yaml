@@ -46,6 +46,36 @@ spec:
               fieldPath: metadata.namespace
         - name: DPU_DAEMON_READINESS_PORT
           value: "8082"
+        - name: DPU_DAEMON_LOG_LEVEL
+          value: "{{.DaemonLogLevel}}"
+        - name: DPU_PLUGIN_LOG_LEVEL
+          value: "{{.PluginLogLevel}}"
+        - name: DPU_PLUGIN_OPI_ENDPOINT
+          value: "{{.PluginOPIEndpoint}}"
+        - name: DPU_PLUGIN_OPI_NETWORK_ENDPOINT
+          value: "{{.PluginOPINetworkEndpoint}}"
+        - name: DPU_PLUGIN_OPI_ENDPOINT_NVIDIA
+          value: "{{.PluginOPIEndpointNvidia}}"
+        - name: DPU_PLUGIN_OPI_ENDPOINT_INTEL
+          value: "{{.PluginOPIEndpointIntel}}"
+        - name: DPU_PLUGIN_OPI_ENDPOINT_MARVELL
+          value: "{{.PluginOPIEndpointMarvell}}"
+        - name: DPU_PLUGIN_OPI_ENDPOINT_XSIGHT
+          value: "{{.PluginOPIEndpointXSight}}"
+        - name: DPU_PLUGIN_OPI_ENDPOINT_MANGOBOOST
+          value: "{{.PluginOPIEndpointMangoBoost}}"
+        - name: DPU_PLUGIN_OPI_NETWORK_ENDPOINT_NVIDIA
+          value: "{{.PluginOPINetworkEndpointNvidia}}"
+        - name: DPU_PLUGIN_OPI_NETWORK_ENDPOINT_INTEL
+          value: "{{.PluginOPINetworkEndpointIntel}}"
+        - name: DPU_PLUGIN_OPI_NETWORK_ENDPOINT_MARVELL
+          value: "{{.PluginOPINetworkEndpointMarvell}}"
+        - name: DPU_PLUGIN_OPI_NETWORK_ENDPOINT_XSIGHT
+          value: "{{.PluginOPINetworkEndpointXSight}}"
+        - name: DPU_PLUGIN_OPI_NETWORK_ENDPOINT_MANGOBOOST
+          value: "{{.PluginOPINetworkEndpointMangoBoost}}"
+        - name: DPU_RESOURCE_NAME
+          value: "{{.ResourceName}}"
         volumeMounts:
         - name: devicesock
           mountPath: /var/lib/kubelet/

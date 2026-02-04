@@ -10,6 +10,20 @@ The emulation test suite:
 - Validates gRPC communication with OPI APIs
 - Simulates multi-vendor scenarios
 
+## Limitations
+
+These emulation tests validate gRPC integration and basic control flows, not full
+hardware behavior. In particular:
+- Storage and security APIs are not exercised end-to-end.
+- Vendor SDK and hardware-specific behavior is not validated.
+- Some bridges require additional services (e.g., Redis/Jaeger for NVIDIA) and may
+  still return `ErrNotImplemented` for unimplemented operations.
+- Networking operations rely on the EVPN bridge. If `opi-evpn-bridge` is not running
+  or the plugin is not configured with the EVPN endpoint, `CreateBridgePort` and
+  `ListBridgePorts` will fail.
+- The EVPN bridge configures Linux bridges via netlink. In many environments (including
+  Docker on WSL), it requires `privileged: true` to start successfully.
+
 ## Prerequisites
 
 1. **Docker** installed and running
@@ -25,12 +39,15 @@ cd ~/unified-k8s/dpu-operator/test/emulation
 docker-compose up -d
 ```
 
-This starts 5 OPI bridge containers:
+This starts 6 OPI bridge containers:
 - `opi-nvidia` on port 50051 (NVIDIA BlueField)
 - `opi-intel` on port 50052 (Intel IPU)
 - `opi-spdk` on port 50053 (Storage reference)
 - `opi-marvell` on port 50054 (Marvell Octeon)
 - `opi-strongswan` on port 50055 (IPsec/Security)
+- `opi-evpn` on port 50056 (EVPN-GW networking, HTTP on 8087)
+
+The NVIDIA plugin uses `opi-evpn` for BridgePort operations.
 
 ### 2. Wait for Services
 
@@ -65,7 +82,7 @@ docker-compose down
 
 | Plugin | OPI Bridge | Port | Health | Discovery | Network | Storage | Security |
 |--------|-----------|------|--------|-----------|---------|---------|----------|
-| **NVIDIA** | opi-nvidia-bridge | 50051 | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **NVIDIA** | opi-nvidia-bridge + opi-evpn-bridge | 50051/50056 | ✅ | ✅ | ✅ (via EVPN) | ❌ | ❌ |
 | **Intel** | opi-intel-bridge | 50052 | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Marvell** | opi-marvell-bridge | 50054 | ✅ | 🔶 | ❌ | ❌ | ❌ |
 
@@ -81,7 +98,7 @@ Legend:
 - Initializes NVIDIA plugin with opi-nvidia-bridge
 - Tests health checks
 - Tests device discovery
-- Tests bridge port operations (create, list, delete)
+- Tests bridge port operations (create, list, delete) via opi-evpn-bridge
 
 #### `TestIntelPlugin_WithOPIBridge`
 - Initializes Intel plugin with opi-intel-bridge
@@ -111,6 +128,7 @@ The docker-compose uses official OPI project images from GitHub Container Regist
 - `ghcr.io/opiproject/opi-spdk-bridge:main`
 - `ghcr.io/opiproject/opi-marvell-bridge:main`
 - `ghcr.io/opiproject/opi-strongswan-bridge:main`
+- `ghcr.io/opiproject/opi-evpn-bridge:main`
 
 ### Building Images Locally
 
@@ -136,6 +154,10 @@ docker build -t ghcr.io/opiproject/opi-marvell-bridge:main .
 # StrongSwan bridge
 cd ~/unified-k8s/opi-strongswan-bridge
 docker build -t ghcr.io/opiproject/opi-strongswan-bridge:main .
+
+# EVPN bridge
+cd ~/unified-k8s/opi-evpn-bridge
+docker build -t ghcr.io/opiproject/opi-evpn-bridge:main .
 ```
 
 ## Troubleshooting
@@ -159,7 +181,12 @@ docker-compose logs opi-intel
    ```bash
    curl http://localhost:8082/v1/inventory/1/inventory/2  # NVIDIA
    curl http://localhost:8083/v1/inventory/1/inventory/2  # Intel
+   curl http://localhost:8085/v1/inventory/1/inventory/2  # Marvell
    ```
+   Note: The SPDK (storage) and StrongSwan (security) bridges do not implement the
+   Inventory service, so the inventory endpoint will return an error or reset.
+   Use gRPC to validate those services instead (see below). The EVPN bridge exposes
+   network services, not inventory.
 
 3. Restart bridges:
    ```bash
@@ -189,7 +216,7 @@ docker-compose logs opi-intel
 
 ### Port Conflicts
 
-If ports 50051-50055 or 8082-8086 are already in use, modify `docker-compose.yml` to use different ports.
+If ports 50051-50056 or 8082-8087 are already in use, modify `docker-compose.yml` to use different ports.
 
 ## Advanced Usage
 
@@ -206,6 +233,9 @@ docker-compose up -d opi-intel redis-intel
 
 # Multiple
 docker-compose up -d opi-nvidia redis-nvidia opi-intel redis-intel
+
+# EVPN only (for networking operations)
+docker-compose up -d opi-evpn redis-evpn
 ```
 
 ### Accessing Bridge HTTP Gateways
@@ -219,8 +249,19 @@ curl http://localhost:8082/v1/inventory/1/inventory/2
 # Intel bridge
 curl http://localhost:8083/v1/inventory/1/inventory/2
 
-# SPDK bridge
-curl http://localhost:8084/v1/inventory/1/inventory/2
+# Marvell bridge
+curl http://localhost:8085/v1/inventory/1/inventory/2
+
+# EVPN bridge (network APIs live on gRPC; HTTP gateway may not expose inventory)
+# grpcurl -plaintext localhost:50056 list
+```
+
+Inventory is not served by the SPDK (storage-only) or StrongSwan (security-only)
+bridges. To validate those, use gRPC service listing:
+
+```bash
+docker exec -it opi-spdk-emulator grpcurl -plaintext localhost:50051 list
+docker exec -it opi-strongswan-emulator grpcurl -plaintext localhost:50051 list
 ```
 
 ### Using grpc-cli

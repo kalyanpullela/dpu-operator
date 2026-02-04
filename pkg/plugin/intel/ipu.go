@@ -26,7 +26,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/openshift/dpu-operator/pkg/opi"
 	"github.com/openshift/dpu-operator/pkg/plugin"
-	"github.com/openshift/dpu-operator/pkg/plugin/pci"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -83,7 +82,7 @@ func (p *IPUPlugin) Info() plugin.PluginInfo {
 		Version:          PluginVersion,
 		Description:      "Intel IPU/DPU plugin supporting IPU E2100 and NetSec Accelerator hardware",
 		SupportedDevices: supportedDevices,
-		Capabilities:     []plugin.Capability{},
+		Capabilities:     []plugin.Capability{plugin.CapabilityNetworking},
 	}
 }
 
@@ -99,7 +98,7 @@ func (p *IPUPlugin) Initialize(ctx context.Context, config plugin.PluginConfig) 
 	p.config = config
 	p.opiEndpoint = config.OPIEndpoint
 	if p.opiEndpoint == "" {
-		p.opiEndpoint = "localhost:50051" // Default OPI endpoint
+		p.opiEndpoint = plugin.DefaultOPIEndpoint
 	}
 
 	p.log.Info("Initializing Intel IPU plugin",
@@ -181,72 +180,14 @@ func (p *IPUPlugin) DiscoverDevices(ctx context.Context) ([]plugin.Device, error
 
 	p.log.Info("Discovering Intel IPU devices")
 
-	var devices []plugin.Device
-
-	// TODO: Implement actual PCI bus scanning for Intel devices
-	discoveredDevices, err := p.scanPCIBus(ctx)
+	devices, err := plugin.ScanDevices(supportedDevices, "Intel", "intel", "INTEL", p.log)
 	if err != nil {
 		p.log.Error(err, "Failed to scan PCI bus")
 		return nil, fmt.Errorf("PCI scan failed: %w", err)
 	}
-
-	devices = append(devices, discoveredDevices...)
 	p.devices = devices
 
 	p.log.Info("Intel IPU device discovery complete", "deviceCount", len(devices))
-	return devices, nil
-}
-
-// scanPCIBus scans the PCI bus for supported Intel devices.
-func (p *IPUPlugin) scanPCIBus(ctx context.Context) ([]plugin.Device, error) {
-	scanner := pci.NewScanner()
-	var devices []plugin.Device
-
-	// Scan for each supported device ID
-	for _, supportedDevice := range supportedDevices {
-		pciDevices, err := scanner.ScanByVendorDevice(supportedDevice.VendorID, supportedDevice.DeviceID)
-		if err != nil {
-			p.log.V(1).Info("Failed to scan for PCI device",
-				"vendorID", supportedDevice.VendorID,
-				"deviceID", supportedDevice.DeviceID,
-				"error", err)
-			continue
-		}
-
-		for _, pciDev := range pciDevices {
-			// Create plugin device from PCI device
-			device := plugin.Device{
-				ID:         fmt.Sprintf("intel-%s", pciDev.Address),
-				PCIAddress: pciDev.Address,
-				Vendor:     "Intel",
-				Model:      supportedDevice.Description,
-				Healthy:    true,
-				Metadata: map[string]string{
-					"pci_vendor_id": pciDev.VendorID,
-					"pci_device_id": pciDev.DeviceID,
-					"pci_class":     pciDev.Class,
-					"device_type":   supportedDevice.Description,
-					"driver":        pciDev.Driver,
-					"numa_node":     pciDev.NumaNode,
-				},
-			}
-
-			// Try to get serial number from VPD
-			if serialNum, err := scanner.GetSerialNumber(pciDev.Address); err == nil {
-				device.SerialNumber = serialNum
-			} else {
-				// Generate a stable ID based on PCI address
-				device.SerialNumber = fmt.Sprintf("INTEL-%s", pciDev.Address)
-			}
-
-			devices = append(devices, device)
-			p.log.Info("Discovered Intel IPU device",
-				"pciAddress", pciDev.Address,
-				"model", device.Model,
-				"driver", pciDev.Driver)
-		}
-	}
-
 	return devices, nil
 }
 

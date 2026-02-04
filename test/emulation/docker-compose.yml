@@ -1,10 +1,13 @@
-version: '3.8'
-
 services:
   # NVIDIA Bridge - Port 50051
   opi-nvidia:
     image: ghcr.io/opiproject/opi-nvidia-bridge:${OPI_BRIDGE_TAG:-main}
     container_name: opi-nvidia-emulator
+    command:
+      - /opi-nvidia-bridge
+      - -grpc_port=50051
+      - -http_port=8082
+      - -redis_addr=redis-nvidia:6379
     ports:
       - "50051:50051"  # gRPC
       - "8082:8082"    # HTTP Gateway
@@ -30,6 +33,11 @@ services:
   opi-intel:
     image: ghcr.io/opiproject/opi-intel-bridge:${OPI_BRIDGE_TAG:-main}
     container_name: opi-intel-emulator
+    command:
+      - /opi-intel-bridge-storage
+      - -grpc_port=50051
+      - -http_port=8082
+      - -redis_addr=redis-intel:6379
     ports:
       - "50052:50051"  # gRPC (mapped to avoid conflict)
       - "8083:8082"    # HTTP Gateway
@@ -55,6 +63,11 @@ services:
   opi-spdk:
     image: ghcr.io/opiproject/opi-spdk-bridge:${OPI_BRIDGE_TAG:-main}
     container_name: opi-spdk-emulator
+    command:
+      - /opi-spdk-bridge
+      - -grpc_port=50051
+      - -http_port=8082
+      - -redis_addr=redis-spdk:6379
     ports:
       - "50053:50051"  # gRPC
       - "8084:8082"    # HTTP Gateway
@@ -64,11 +77,6 @@ services:
       - redis-spdk
     networks:
       - opi-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/v1/inventory/1/inventory/2"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   redis-spdk:
     image: redis:7.2-alpine
@@ -80,6 +88,11 @@ services:
   opi-marvell:
     image: ghcr.io/opiproject/opi-marvell-bridge:${OPI_BRIDGE_TAG:-main}
     container_name: opi-marvell-emulator
+    command:
+      - /opi-marvell-bridge
+      - -grpc_port=50051
+      - -http_port=8082
+      - -redis_addr=redis-marvell:6379
     ports:
       - "50054:50051"  # gRPC
       - "8085:8082"    # HTTP Gateway
@@ -114,15 +127,42 @@ services:
       - redis-strongswan
     networks:
       - opi-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/v1/inventory/1/inventory/2"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   redis-strongswan:
     image: redis:7.2-alpine
     container_name: redis-strongswan
+    networks:
+      - opi-network
+
+  # EVPN Bridge (Networking) - Port 50056
+  opi-evpn:
+    image: ghcr.io/opiproject/opi-evpn-bridge:${OPI_BRIDGE_TAG:-main}
+    container_name: opi-evpn-emulator
+    privileged: true
+    command:
+      - /opi-evpn-bridge
+      - --config=/config.yaml
+      - --grpcport=50051
+      - --httpport=8082
+      - --dbaddress=redis-evpn:6379
+    volumes:
+      - ./evpn-config.yaml:/config.yaml:ro
+    ports:
+      - "50056:50051"  # gRPC
+      - "8087:8082"    # HTTP Gateway
+    depends_on:
+      - redis-evpn
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+      - SYS_MODULE
+      - NET_RAW
+    networks:
+      - opi-network
+
+  redis-evpn:
+    image: redis:7.2-alpine
+    container_name: redis-evpn
     networks:
       - opi-network
 
@@ -137,3 +177,4 @@ networks:
 #   cd ~/unified-k8s/opi-spdk-bridge && docker build -t ghcr.io/opiproject/opi-spdk-bridge:local .
 #   cd ~/unified-k8s/opi-marvell-bridge && docker build -t ghcr.io/opiproject/opi-marvell-bridge:local .
 #   cd ~/unified-k8s/opi-strongswan-bridge && docker build -t ghcr.io/opiproject/opi-strongswan-bridge:local .
+#   cd ~/unified-k8s/opi-evpn-bridge && docker build -t ghcr.io/opiproject/opi-evpn-bridge:local .

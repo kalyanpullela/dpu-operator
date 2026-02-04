@@ -1,0 +1,11 @@
+{{- if .Values.operatorConfig.create }}
+apiVersion: config.openshift.io/v1
+kind: DpuOperatorConfig
+metadata:
+  name: dpu-operator-config
+spec:
+  logLevel: {{ .Values.operatorConfig.logLevel }}
+  {{- if .Values.operatorConfig.resourceName }}
+  resourceName: {{ .Values.operatorConfig.resourceName }}
+  {{- end }}
+{{- end }}

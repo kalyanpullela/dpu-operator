@@ -39,15 +39,15 @@ func (m *mockLifecycleServer) Init(ctx context.Context, req *lifecyclepb.InitReq
 	return &lifecyclepb.IpPort{Ip: "127.0.0.1", Port: 50051}, nil
 }
 
-func (m *mockLifecycleServer) GetDevices(ctx context.Context, req *emptypb.Empty) (*lifecyclepb.DeviceListResponse, error) {
+func (m *mockLifecycleServer) GetDevices(ctx context.Context, req *lifecyclepb.GetDevicesRequest) (*lifecyclepb.DeviceListResponse, error) {
 	return &lifecyclepb.DeviceListResponse{
 		Devices: map[string]*lifecyclepb.Device{
-			"device-1": {ID: "device-1", Health: "healthy"},
+			"device-1": {Id: "device-1", Health: "healthy"},
 		},
 	}, nil
 }
 
-func (m *mockLifecycleServer) SetNumVfs(ctx context.Context, req *lifecyclepb.VfCount) (*lifecyclepb.VfCount, error) {
+func (m *mockLifecycleServer) SetNumVfs(ctx context.Context, req *lifecyclepb.SetNumVfsRequest) (*lifecyclepb.VfCount, error) {
 	return &lifecyclepb.VfCount{VfCnt: req.VfCnt}, nil
 }
 

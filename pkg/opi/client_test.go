@@ -47,18 +47,18 @@ func (m *mockLifecycleServer) Init(ctx context.Context, req *lifecyclepb.InitReq
 	return &lifecyclepb.IpPort{Ip: "192.168.1.1", Port: 50051}, nil
 }
 
-func (m *mockLifecycleServer) GetDevices(ctx context.Context, req *emptypb.Empty) (*lifecyclepb.DeviceListResponse, error) {
+func (m *mockLifecycleServer) GetDevices(ctx context.Context, req *lifecyclepb.GetDevicesRequest) (*lifecyclepb.DeviceListResponse, error) {
 	if m.devicesResponse != nil {
 		return m.devicesResponse, nil
 	}
 	return &lifecyclepb.DeviceListResponse{
 		Devices: map[string]*lifecyclepb.Device{
-			"dev0": {ID: "dev0", Health: "healthy"},
+			"dev0": {Id: "dev0", Health: "healthy"},
 		},
 	}, nil
 }
 
-func (m *mockLifecycleServer) SetNumVfs(ctx context.Context, req *lifecyclepb.VfCount) (*lifecyclepb.VfCount, error) {
+func (m *mockLifecycleServer) SetNumVfs(ctx context.Context, req *lifecyclepb.SetNumVfsRequest) (*lifecyclepb.VfCount, error) {
 	if m.vfCountResponse != nil {
 		return m.vfCountResponse, nil
 	}
@@ -157,11 +157,11 @@ func startMockServer(t *testing.T) (*grpc.ClientConn, func()) {
 		}
 	}()
 
-	conn, err := grpc.Dial(listener.Addr().String(),
+	conn, err := grpc.NewClient(listener.Addr().String(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock())
+	)
 	if err != nil {
-		t.Fatalf("Failed to dial: %v", err)
+		t.Fatalf("Failed to create client: %v", err)
 	}
 
 	cleanup := func() {
@@ -202,8 +202,8 @@ func TestLifecycleClient_GetDevices(t *testing.T) {
 	if len(resp.Devices) != 1 {
 		t.Errorf("Expected 1 device, got %d", len(resp.Devices))
 	}
-	if resp.Devices["dev0"].ID != "dev0" {
-		t.Errorf("Expected device ID 'dev0', got %s", resp.Devices["dev0"].ID)
+	if resp.Devices["dev0"].Id != "dev0" {
+		t.Errorf("Expected device ID 'dev0', got %s", resp.Devices["dev0"].Id)
 	}
 }
 

@@ -28,7 +28,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // Client is the main OPI client that provides access to all OPI services.
@@ -86,15 +85,11 @@ func NewClient(endpoint string, opts ...ClientOption) (*Client, error) {
 		opt(options)
 	}
 
-	// Use a bounded dial so initialization doesn't hang forever if server is unavailable.
-	ctx, cancel := context.WithTimeout(context.Background(), options.dialTimeout)
-	defer cancel()
-	conn, err := grpc.DialContext(ctx, endpoint,
+	conn, err := grpc.NewClient(endpoint,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to OPI endpoint %s: %w", endpoint, err)
+		return nil, fmt.Errorf("failed to create OPI client for endpoint %s: %w", endpoint, err)
 	}
 
 	return newClientWithConn(conn, endpoint, options), nil
@@ -204,14 +199,14 @@ func (c *LifecycleClient) Init(ctx context.Context, req *lifecyclepb.InitRequest
 func (c *LifecycleClient) GetDevices(ctx context.Context) (*lifecyclepb.DeviceListResponse, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
-	return c.deviceClient.GetDevices(ctx, &emptypb.Empty{})
+	return c.deviceClient.GetDevices(ctx, &lifecyclepb.GetDevicesRequest{})
 }
 
 // SetNumVfs configures number of virtual functions for a device.
 func (c *LifecycleClient) SetNumVfs(ctx context.Context, count int32) (*lifecyclepb.VfCount, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
-	req := &lifecyclepb.VfCount{
+	req := &lifecyclepb.SetNumVfsRequest{
 		VfCnt: count,
 	}
 	return c.deviceClient.SetNumVfs(ctx, req)

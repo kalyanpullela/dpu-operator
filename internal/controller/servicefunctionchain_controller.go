@@ -18,16 +18,20 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	configv1 "github.com/openshift/dpu-operator/api/v1"
-	"github.com/openshift/dpu-operator/pkgs/vars"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -40,9 +44,21 @@ type ServiceFunctionChainReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+const (
+	sfcLabelKey        = "dpu.config.openshift.io/sfc"
+	sfcFunctionLabel   = "dpu.config.openshift.io/network-function"
+	sfcSpecHashKey     = "dpu.config.openshift.io/pod-spec-hash"
+	sfcNetworksAnnoKey = "k8s.v1.cni.cncf.io/networks"
+	nodeSideLabelKey   = "dpu.config.openshift.io/dpuside"
+	defaultDpuNAD      = "dpunfcni-conf"
+	defaultHostNAD     = "default-sriov-net"
+	defaultDpuResource = "openshift.io/dpu"
+)
+
 //+kubebuilder:rbac:groups=config.openshift.io,resources=servicefunctionchains,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=config.openshift.io,resources=servicefunctionchains/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=config.openshift.io,resources=servicefunctionchains/finalizers,verbs=update
+//+kubebuilder:rbac:groups=config.openshift.io,resources=dpuoperatorconfigs,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -68,30 +84,63 @@ func (r *ServiceFunctionChainReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
+	desiredPods := make(map[string]*corev1.Pod)
+	resourceName := r.resourceNameForSFC(ctx)
 	for _, nf := range sfc.Spec.NetworkFunctions {
-		pod := networkFunctionPod(sfc, nf)
+		pod := networkFunctionPod(sfc, nf, resourceName)
 		if err := controllerutil.SetControllerReference(sfc, pod, r.Scheme); err != nil {
 			logger.Error(err, "Failed to set owner reference on Pod", "pod", pod.Name)
 			return ctrl.Result{}, err
 		}
-
-		if err := r.createOrUpdatePod(ctx, pod); err != nil {
-			logger.Error(err, "Failed to create or update pod", "pod", pod.Name)
+		if err := setPodSpecHash(pod); err != nil {
+			logger.Error(err, "Failed to compute pod spec hash", "pod", pod.Name)
 			return ctrl.Result{}, err
+		}
+		desiredPods[pod.Name] = pod
+	}
+
+	// Cleanup pods that no longer exist in spec
+	existingPods := &corev1.PodList{}
+	if err := r.List(ctx, existingPods,
+		client.InNamespace(sfc.Namespace),
+		client.MatchingLabels{sfcLabelKey: sfc.Name},
+	); err != nil {
+		logger.Error(err, "Failed to list existing pods for ServiceFunctionChain")
+		return ctrl.Result{}, err
+	}
+	for i := range existingPods.Items {
+		existing := &existingPods.Items[i]
+		if _, ok := desiredPods[existing.Name]; !ok {
+			logger.Info("Deleting stale ServiceFunctionChain pod", "pod", existing.Name)
+			if err := r.Delete(ctx, existing); err != nil && !errors.IsNotFound(err) {
+				logger.Error(err, "Failed to delete stale pod", "pod", existing.Name)
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
+	for _, pod := range desiredPods {
+		requeue, err := r.reconcilePod(ctx, pod)
+		if err != nil {
+			logger.Error(err, "Failed to reconcile pod", "pod", pod.Name)
+			return ctrl.Result{}, err
+		}
+		if requeue {
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 		}
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func networkFunctionPod(sfc *configv1.ServiceFunctionChain, nf configv1.NetworkFunction) *corev1.Pod {
+func networkFunctionPod(sfc *configv1.ServiceFunctionChain, nf configv1.NetworkFunction, resourceName string) *corev1.Pod {
 	trueVar := true
 	podName := fmt.Sprintf("%s-%s", sfc.Name, nf.Name)
+	resourceKey := corev1.ResourceName(resourceName)
 
-	defaultNetworks := []string{"dpunfcni-conf", "dpunfcni-conf"}
 	networks := nf.Networks
 	if len(networks) == 0 {
-		networks = defaultNetworks
+		networks = defaultNetworksForNodeSelector(sfc.Spec.NodeSelector)
 	}
 	networkAnnotation := strings.Join(networks, ", ")
 
@@ -110,9 +159,13 @@ func networkFunctionPod(sfc *configv1.ServiceFunctionChain, nf configv1.NetworkF
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
-			Namespace: vars.Namespace,
+			Namespace: sfc.Namespace,
+			Labels: map[string]string{
+				sfcLabelKey:      sfc.Name,
+				sfcFunctionLabel: nf.Name,
+			},
 			Annotations: map[string]string{
-				"k8s.v1.cni.cncf.io/networks": networkAnnotation,
+				sfcNetworksAnnoKey: networkAnnotation,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -129,10 +182,10 @@ func networkFunctionPod(sfc *configv1.ServiceFunctionChain, nf configv1.NetworkF
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
-							"openshift.io/dpu": *resource.NewQuantity(dpuRequests, resource.DecimalSI),
+							resourceKey: *resource.NewQuantity(dpuRequests, resource.DecimalSI),
 						},
 						Limits: corev1.ResourceList{
-							"openshift.io/dpu": *resource.NewQuantity(dpuLimits, resource.DecimalSI),
+							resourceKey: *resource.NewQuantity(dpuLimits, resource.DecimalSI),
 						},
 					},
 					SecurityContext: &corev1.SecurityContext{
@@ -148,22 +201,107 @@ func networkFunctionPod(sfc *configv1.ServiceFunctionChain, nf configv1.NetworkF
 	}
 }
 
-func (r *ServiceFunctionChainReconciler) createOrUpdatePod(ctx context.Context, pod *corev1.Pod) error {
-	existing := &corev1.Pod{}
-	err := r.Get(ctx, client.ObjectKey{Name: pod.Name, Namespace: pod.Namespace}, existing)
-	if err != nil && errors.IsNotFound(err) {
-		return r.Create(ctx, pod)
+func defaultNetworksForNodeSelector(nodeSelector map[string]string) []string {
+	if nodeSelector != nil {
+		if side, ok := nodeSelector[nodeSideLabelKey]; ok {
+			switch strings.ToLower(side) {
+			case "dpu":
+				return []string{defaultDpuNAD}
+			case "dpu-host", "host":
+				return []string{defaultHostNAD}
+			}
+		}
+		if val, ok := nodeSelector["dpu"]; ok && strings.EqualFold(val, "true") {
+			return []string{defaultDpuNAD}
+		}
 	}
+	return []string{defaultHostNAD}
+}
+
+func (r *ServiceFunctionChainReconciler) resourceNameForSFC(ctx context.Context) string {
+	logger := log.FromContext(ctx)
+	cfg := &configv1.DpuOperatorConfig{}
+	if err := r.Get(ctx, configv1.DpuOperatorConfigNamespacedName, cfg); err != nil {
+		if !errors.IsNotFound(err) {
+			logger.Error(err, "Failed to get DpuOperatorConfig; using default resource name", "resourceName", defaultDpuResource)
+		}
+		return defaultDpuResource
+	}
+	if cfg.Spec.ResourceName == "" {
+		return defaultDpuResource
+	}
+	return cfg.Spec.ResourceName
+}
+
+func (r *ServiceFunctionChainReconciler) reconcilePod(ctx context.Context, desired *corev1.Pod) (bool, error) {
+	existing := &corev1.Pod{}
+	err := r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}, existing)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, r.Create(ctx, desired)
+		}
+		return false, err
+	}
+
+	desiredHash := desired.Annotations[sfcSpecHashKey]
+	if desiredHash == "" {
+		return false, fmt.Errorf("missing desired pod spec hash for %s", desired.Name)
+	}
+	if existing.Annotations == nil || existing.Annotations[sfcSpecHashKey] != desiredHash {
+		// Pod spec changes require recreation.
+		return true, r.Delete(ctx, existing)
+	}
+
+	updated := false
+	if existing.Labels == nil {
+		existing.Labels = map[string]string{}
+	}
+	for k, v := range desired.Labels {
+		if existing.Labels[k] != v {
+			existing.Labels[k] = v
+			updated = true
+		}
+	}
+	if existing.Annotations == nil {
+		existing.Annotations = map[string]string{}
+	}
+	for k, v := range desired.Annotations {
+		if existing.Annotations[k] != v {
+			existing.Annotations[k] = v
+			updated = true
+		}
+	}
+
+	if updated {
+		return false, r.Update(ctx, existing)
+	}
+	return false, nil
+}
+
+func setPodSpecHash(pod *corev1.Pod) error {
+	if pod == nil {
+		return fmt.Errorf("pod is nil")
+	}
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+
+	fingerprint := struct {
+		Spec     corev1.PodSpec `json:"spec"`
+		Networks string         `json:"networks"`
+	}{
+		Spec:     pod.Spec,
+		Networks: pod.Annotations[sfcNetworksAnnoKey],
+	}
+
+	data, err := json.Marshal(fingerprint)
 	if err != nil {
 		return err
 	}
 
-	// Preserve immutable fields
-	pod.ResourceVersion = existing.ResourceVersion
-	pod.UID = existing.UID
-	pod.CreationTimestamp = existing.CreationTimestamp
-
-	return r.Update(ctx, pod)
+	sum := sha256.Sum256(data)
+	pod.Annotations[sfcSpecHashKey] = hex.EncodeToString(sum[:])
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

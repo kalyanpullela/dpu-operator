@@ -21,7 +21,6 @@ import (
 	"embed"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/dpu-operator/api/v1"
@@ -88,33 +87,17 @@ func (r *DataProcessingUnitReconciler) getPluginForDPU(logger logr.Logger, dpu *
 		}
 	}
 
-	// Fallback: try to match by product name substring (legacy behavior)
+	// Fallback: exact case-insensitive match on vendor name
 	for _, p := range plugins {
 		info := p.Info()
-		if contains(productName, info.Vendor) {
-			logger.Info("Matched plugin for DPU by fallback heuristic", "plugin", info.Name, "vendor", info.Vendor, "productName", productName)
+		if strings.EqualFold(productName, info.Vendor) {
+			logger.Info("Matched plugin for DPU by exact vendor name", "plugin", info.Name, "vendor", info.Vendor, "productName", productName)
 			return p
 		}
 	}
 
 	logger.V(1).Info("No plugin matched for DPU", "productName", productName, "availablePlugins", len(plugins))
 	return nil
-}
-
-// contains is a helper to check if a string contains a substring (case-insensitive)
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) &&
-		(s == substr ||
-			findSubstring(strings.ToLower(s), strings.ToLower(substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=*
@@ -159,15 +142,8 @@ func (r *DataProcessingUnitReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return r.handleDeletion(ctx, dpu)
 	}
 
-	// Get the canonical DpuOperatorConfig CR to use as owner for VSP resources
-	dpuOperatorConfig, err := r.getSoleDpuOperatorConfig(ctx)
-	if err != nil {
-		logger.Error(err, "Failed to get DpuOperatorConfig")
-		return ctrl.Result{RequeueAfter: time.Second * 10}, err
-	}
-
 	// Ensure VSP resources exist
-	err = r.ensureVSPResources(ctx, dpu, dpuOperatorConfig)
+	err = r.ensureVSPResources(ctx, dpu, dpu)
 	if err != nil {
 		logger.Error(err, "Failed to ensure VSP resources")
 		return ctrl.Result{}, err
@@ -185,7 +161,7 @@ func (r *DataProcessingUnitReconciler) cleanupVSPResources(ctx context.Context, 
 	return renderer.CleanupResourcesInReverseOrder(ctx, r.Client, logger)
 }
 
-func (r *DataProcessingUnitReconciler) ensureVSPResources(ctx context.Context, dpu *configv1.DataProcessingUnit, dpuOperatorConfig *configv1.DpuOperatorConfig) error {
+func (r *DataProcessingUnitReconciler) ensureVSPResources(ctx context.Context, dpu *configv1.DataProcessingUnit, owner client.Object) error {
 	logger := log.FromContext(ctx)
 
 	// Create VSP template variables
@@ -211,7 +187,7 @@ func (r *DataProcessingUnitReconciler) ensureVSPResources(ctx context.Context, d
 	if err != nil {
 		return fmt.Errorf("failed to get vendor directory for DPU type %s: %v", dpu.Spec.DpuProductName, err)
 	}
-	err = r.applyVSPResourcesWithTracking(logger, vendorDir, templateVars, dpuOperatorConfig, dpu.Name)
+	err = r.applyVSPResourcesWithTracking(logger, vendorDir, templateVars, owner, dpu.Name)
 	if err != nil {
 		return fmt.Errorf("failed to apply vendor-specific VSP resources: %v", err)
 	}
@@ -274,15 +250,6 @@ func (r *DataProcessingUnitReconciler) handleDeletion(ctx context.Context, dpu *
 
 	logger.Info("Cleanup completed for DataProcessingUnit")
 	return ctrl.Result{}, nil
-}
-
-func (r *DataProcessingUnitReconciler) getSoleDpuOperatorConfig(ctx context.Context) (*configv1.DpuOperatorConfig, error) {
-	dpuOperatorConfig := &configv1.DpuOperatorConfig{}
-	key := client.ObjectKey{Name: vars.DpuOperatorConfigName}
-	if err := r.Get(ctx, key, dpuOperatorConfig); err != nil {
-		return nil, fmt.Errorf("failed to get DpuOperatorConfig %q: %v", vars.DpuOperatorConfigName, err)
-	}
-	return dpuOperatorConfig, nil
 }
 
 func (r *DataProcessingUnitReconciler) SetupWithManager(mgr ctrl.Manager) error {

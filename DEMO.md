@@ -74,7 +74,7 @@ sleep 10
 cd ..
 ```
 
-**Talking Point:** "We're running 5 OPI bridge emulators that simulate real DPU hardware using the actual OPI APIs."
+**Talking Point:** "We're running 6 OPI bridge emulators (including EVPN) that simulate real DPU hardware using the actual OPI APIs."
 
 ---
 
@@ -126,6 +126,7 @@ opi-intel-emulator        Up    0.0.0.0:50052->50051/tcp
 opi-spdk-emulator         Up    0.0.0.0:50053->50051/tcp
 opi-marvell-emulator      Up    0.0.0.0:50054->50051/tcp
 opi-strongswan-emulator   Up    0.0.0.0:50055->50051/tcp
+opi-evpn-emulator         Up    0.0.0.0:50056->50051/tcp
 ```
 
 **Run emulation tests:**
@@ -139,6 +140,7 @@ go test -tags=emulation ./test/emulation/... -v
 === RUN   TestNVIDIAPlugin_WithOPIBridge
     ✓ Health check passed
     ✓ Discovered 0 devices
+    ✓ Created bridge port: test-port-nvidia
 --- PASS: TestNVIDIAPlugin_WithOPIBridge
 
 === RUN   TestIntelPlugin_WithOPIBridge
@@ -146,7 +148,7 @@ go test -tags=emulation ./test/emulation/... -v
     CreateBridgePort failed (may not be fully implemented): not implemented
 --- PASS: TestIntelPlugin_WithOPIBridge
 
-Total available bridges: 5/5
+Total available bridges: 6/6
 PASS
 ```
 
@@ -154,7 +156,7 @@ PASS
 - "Tests run against actual OPI bridge implementations"
 - "Same gRPC APIs used with real hardware"
 - "NVIDIA/Intel/Marvell plugins connect to their bridges"
-- "Network operations validated where implemented (NVIDIA)"
+- "Network operations validated via the EVPN bridge (NVIDIA)"
 
 **Show live gRPC traffic:**
 
@@ -217,8 +219,8 @@ go test -tags=emulation ./test/emulation/... -run TestNVIDIAPlugin -timeout 15s 
 #### Method 3: Check All Bridges Received Traffic
 
 ```bash
-echo "Checking activity on all 5 bridges..."
-for bridge in opi-nvidia-emulator opi-intel-emulator opi-spdk-emulator opi-marvell-emulator opi-strongswan-emulator; do
+echo "Checking activity on all 6 bridges..."
+for bridge in opi-nvidia-emulator opi-intel-emulator opi-spdk-emulator opi-marvell-emulator opi-strongswan-emulator opi-evpn-emulator; do
     LINES=$(docker logs $bridge 2>&1 | wc -l)
     echo "  $bridge: $LINES log lines"
 done
@@ -245,6 +247,7 @@ curl -s http://localhost:8083/v1/inventory/1/inventory/2 | head -20
 - "Bridges expose both gRPC and HTTP APIs"
 - "We can verify connectivity multiple ways"
 - "Ports are actually listening and responding"
+- "Inventory HTTP endpoints are available for NVIDIA/Intel/Marvell; SPDK and StrongSwan are storage/security-only"
 
 #### Alternative: Use Dedicated Proof Script
 

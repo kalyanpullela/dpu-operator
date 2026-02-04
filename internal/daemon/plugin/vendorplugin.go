@@ -384,8 +384,9 @@ func (g *GrpcPlugin) SetNumVfs(count int32) (*pb.VfCount, error) {
 			devices, err := g.registryPlugin.DiscoverDevices(context.Background())
 			if err == nil && len(devices) > 0 {
 				// The legacy VSP path applies VF changes at the device level without a specific ID.
-				// For the registry plugin, apply to the first discovered device to preserve behavior.
-				targetID := resolveDeviceID(devices[0])
+				// For the registry plugin, apply to the device that best matches the DPU identifier.
+				target := selectDeviceForIdentifier(string(g.dpuIdentifier), devices)
+				targetID := resolveDeviceID(target)
 				if err := networkPlugin.SetVFCount(context.Background(), targetID, int(count)); err == nil {
 					return &pb.VfCount{VfCnt: count}, nil
 				} else if pkgplugin.IsNotImplemented(err) || pkgplugin.IsCapabilityNotSupported(err) {
@@ -422,6 +423,81 @@ func resolveDeviceID(device pkgplugin.Device) string {
 		return device.PCIID.String()
 	}
 	return "unknown"
+}
+
+func selectDeviceForIdentifier(identifier string, devices []pkgplugin.Device) pkgplugin.Device {
+	if len(devices) == 0 {
+		return pkgplugin.Device{}
+	}
+	if identifier == "" {
+		return devices[0]
+	}
+
+	candidates := identifierCandidates(identifier)
+
+	// Prefer exact matches first.
+	for _, candidate := range candidates {
+		for _, device := range devices {
+			if device.ID != "" && candidate == normalizeIdentifier(device.ID) {
+				return device
+			}
+			if device.SerialNumber != "" && candidate == normalizeIdentifier(device.SerialNumber) {
+				return device
+			}
+			if device.PCIAddress != "" && candidate == normalizeIdentifier(device.PCIAddress) {
+				return device
+			}
+		}
+	}
+
+	// Fallback to a contains match for compatibility.
+	for _, candidate := range candidates {
+		for _, device := range devices {
+			if device.ID != "" && strings.Contains(candidate, normalizeIdentifier(device.ID)) {
+				return device
+			}
+			if device.SerialNumber != "" && strings.Contains(candidate, normalizeIdentifier(device.SerialNumber)) {
+				return device
+			}
+			if device.PCIAddress != "" && strings.Contains(candidate, normalizeIdentifier(device.PCIAddress)) {
+				return device
+			}
+		}
+	}
+
+	return devices[0]
+}
+
+func normalizeIdentifier(value string) string {
+	value = strings.ToLower(value)
+	return strings.ReplaceAll(value, ":", "-")
+}
+
+func identifierCandidates(identifier string) []string {
+	normalized := normalizeIdentifier(identifier)
+	candidates := []string{normalized}
+
+	prefixes := []string{
+		"nvidia-bf-",
+		"xsight-",
+		"mangoboost-",
+		"intel-ipu-",
+		"intel-netsec-",
+		"marvell-dpu-",
+	}
+
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(normalized, prefix) {
+			candidates = append(candidates, strings.TrimPrefix(normalized, prefix))
+			break
+		}
+	}
+
+	if strings.HasSuffix(normalized, "-dpu") {
+		candidates = append(candidates, strings.TrimSuffix(normalized, "-dpu"))
+	}
+
+	return candidates
 }
 
 func bridgePortRequestFromOPI(req *opi.CreateBridgePortRequest) *pkgplugin.BridgePortRequest {
